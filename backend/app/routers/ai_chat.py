@@ -31,12 +31,21 @@ async def chat_response(request: ChatRequest):
     输入用户回答，AI生成下一个问题或结束收集
     """
     try:
-        next_question = await ai_service.process_answer(request.session_id, request.answer)
+        result = await ai_service.process_answer(request.session_id, request.answer)
         
-        if next_question is None:
+        # process_answer 返回字典，包含 status, question, step
+        if isinstance(result, dict):
+            status = result.get("status", "continue")
+            question = result.get("question")
+            if status == "complete" or question is None:
+                return ChatResponse(status="complete")
+            return ChatResponse(question=question, status="continue")
+        
+        # 兼容旧版本：如果返回字符串或 None
+        if result is None:
             return ChatResponse(status="complete")
         
-        return ChatResponse(question=next_question, status="continue")
+        return ChatResponse(question=result, status="continue")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

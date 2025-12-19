@@ -3,7 +3,7 @@ API Gateway 路由
 统一对外提供第三方 API 调用接口
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Any, Optional
 from app.services.gateway_service import GatewayService
 from app.utils.logger import logger
@@ -92,9 +92,12 @@ async def llm_chat(request: ChatRequest):
 # ========== LLM 抽取 ==========
 class ExtractRequest(BaseModel):
     """抽取请求模型"""
+    model_config = ConfigDict(populate_by_name=True)  # 允许使用字段名或别名
+    
     text: str
-    schema: Dict[str, Any]  # JSON Schema
-    model: str = "gpt-4"
+    json_schema: Dict[str, Any] = Field(..., alias="schema", description="JSON Schema for extraction")
+    model: Optional[str] = None
+    provider: str = "auto"  # "openai", "deepseek", "auto"
 
 
 @router.post("/llm/extract")
@@ -106,7 +109,7 @@ async def llm_extract(request: ExtractRequest):
     try:
         result = await gateway_service.llm_extract(
             text=request.text,
-            schema=request.schema,
+            schema=request.json_schema,
             model=request.model,
             provider=request.provider
         )

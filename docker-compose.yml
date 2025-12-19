@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -8,12 +6,21 @@ services:
     container_name: rootjourney-backend
     ports:
       - "8000:8000"
-    environment:
-      - DATABASE_URL=sqlite:///./app.db
-      - SECRET_KEY=your-secret-key-here
+
+    # ✅ 从 backend/.env 注入环境变量（包含 DeepSeek/Mongo/Redis/SECRET_KEY 等）
+    env_file:
+      - ./backend/.env
+
+    # ✅ 开发模式：本地代码挂载进容器，改代码自动 reload
     volumes:
       - ./backend:/app
+
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+    depends_on:
+      - mongo
+      - redis
+
     networks:
       - rootjourney-network
 
@@ -29,7 +36,27 @@ services:
     networks:
       - rootjourney-network
 
+  mongo:
+    image: mongo:7
+    container_name: rootjourney-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - rootjourney-network
+
+  redis:
+    image: redis:7
+    container_name: rootjourney-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - rootjourney-network
+
 networks:
   rootjourney-network:
     driver: bridge
 
+volumes:
+  mongo-data:

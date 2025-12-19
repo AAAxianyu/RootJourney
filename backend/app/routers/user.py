@@ -12,13 +12,13 @@ ai_service = AIService()
 
 
 @router.post("/input", response_model=UserResponse)
-async def submit_input(input: UserInput):
+async def submit_input(user_input: UserInput):
     """
     用户输入基本信息，启动会话
     返回 session_id
     """
     try:
-        session_id = await ai_service.start_session(input)
+        session_id = await ai_service.start_session(user_input)
         return UserResponse(session_id=session_id, message="会话已创建")
     except Exception as e:
         logger.error(f"Error creating session: {e}")
