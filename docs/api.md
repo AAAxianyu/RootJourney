@@ -20,6 +20,79 @@ Authorization: Bearer <token>
 
 ## 端点列表
 
+### API Gateway（统一第三方API接口）
+
+#### 语音转写
+- **POST** `/api/voice/transcribe`
+- 讯飞语音转写，上传录音文件返回转写文本
+- 请求参数：
+  - `audio_file`: 音频文件（multipart/form-data）
+  - `audio_format`: 音频格式（默认: wav）
+  - `language`: 语言代码（默认: zh_cn）
+
+#### LLM 问答
+- **POST** `/api/llm/chat`
+- GPT-4 问答接口
+- 请求体：
+  ```json
+  {
+    "messages": [
+      {"role": "user", "content": "你好"}
+    ],
+    "model": "gpt-4",
+    "temperature": 0.7
+  }
+  ```
+
+#### LLM 抽取
+- **POST** `/api/llm/extract`
+- GPT-4 抽取 JSON 结构化信息
+- 请求体：
+  ```json
+  {
+    "text": "文本内容",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"}
+      }
+    },
+    "model": "gpt-4"
+  }
+  ```
+
+#### 搜索
+- **GET** `/api/search?query=关键词&num_results=10`
+- Google Custom Search 搜索接口
+
+#### 图片生成
+- **POST** `/api/media/image`
+- DALL·E 生成图片
+- 请求体：
+  ```json
+  {
+    "prompt": "图片描述",
+    "size": "1024x1024"
+  }
+  ```
+
+#### 视频生成（任务）
+- **POST** `/api/media/video`
+- 创建 Sora 视频生成任务
+- 请求体：
+  ```json
+  {
+    "prompt": "视频描述",
+    "duration": 10
+  }
+  ```
+- 返回：`{"task_id": "...", "status": "pending"}`
+
+#### 查询视频任务状态
+- **GET** `/api/media/video/{task_id}`
+- 查询视频生成任务状态
+- 返回：`{"status": "pending|processing|completed|failed", "url": "..."}`
+
 ### 用户相关
 
 #### 创建用户

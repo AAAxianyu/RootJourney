@@ -5,7 +5,7 @@ FastAPI 应用入口文件
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import user, ai_chat, search, generate, export
+from app.routers import user, ai_chat, search, generate, export, gateway, health, config
 
 app = FastAPI(
     title="RootJourney API",
@@ -28,14 +28,13 @@ app.include_router(ai_chat.router)
 app.include_router(search.router)
 app.include_router(generate.router)
 app.include_router(export.router)
+app.include_router(gateway.router)  # API Gateway
+app.include_router(health.router)  # 健康检查和测试
+app.include_router(config.router)  # 配置管理（手动输入密钥）
 
 @app.get("/")
 async def root():
     return {"message": "RootJourney API"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
 
 if __name__ == "__main__":
     import uvicorn
