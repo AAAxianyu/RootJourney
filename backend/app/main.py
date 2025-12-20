@@ -5,7 +5,7 @@ FastAPI 应用入口文件
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import user, ai_chat, search, generate, export, gateway, health, session
+from app.routers import user, ai_chat, search, generate, export, gateway, health, session, memories
 
 app = FastAPI(
     title="RootJourney API",
@@ -36,6 +36,7 @@ app.include_router(search.router)
 app.include_router(generate.router)
 app.include_router(export.router)
 app.include_router(session.router)  # 会话管理（查看和保存档案）
+app.include_router(memories.router)  # 记忆总结
 app.include_router(health.router)  # 健康检查和测试
 
 @app.get("/")

@@ -1354,13 +1354,65 @@
             <div class="absolute bottom-0 left-0 right-0 bg-white border-t border-solid py-4 px-6 z-40" 
                  style="border-top-color: rgba(124, 179, 66, 0.1); 
                         background: rgba(255, 255, 255, 0.95);
-                        backdrop-filter: blur(10px);">
-                <div class="flex items-center justify-center gap-4">
-                    <button onclick="saveReportAsArchive()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95" style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%); color: white; font-family: 'Noto Sans SC', sans-serif; font-weight: 600; box-shadow: 0 4px 12px rgba(46, 75, 44, 0.3);">
+                        backdrop-filter: blur(10px);
+                        min-height: 80px;">
+                <div class="flex items-center justify-center gap-4 flex-wrap">
+                    <button onclick="saveReportAsArchive()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 flex-shrink-0" style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%); color: white; font-family: 'Noto Sans SC', sans-serif; font-weight: 600; box-shadow: 0 4px 12px rgba(46, 75, 44, 0.3);">
                         保存为档案
                     </button>
-                    <button onclick="shareReport()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 border-2" style="border-color: #2E4B2C; color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif; font-weight: 600;">
+                    <button onclick="shareReport()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 border-2 flex-shrink-0" style="border-color: #2E4B2C; color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif; font-weight: 600;">
                         分享报告
+                    </button>
+                    <button onclick="showMemoriesPage()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 flex-shrink-0" style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%); color: white; font-family: 'Noto Sans SC', sans-serif; font-weight: 600; box-shadow: 0 4px 12px rgba(46, 75, 44, 0.3);">
+                        下一步
+                    </button>
+                </div>
+            </div>
+        </main>
+        
+        <!-- 近期回忆页面 -->
+        <main id="memories-page" class="px-4 page-content relative" style="padding-bottom: 100px;">
+            <!-- 返回按钮 -->
+            <div class="flex items-center justify-start pt-6 pb-4">
+                <button onclick="showReportPageFromMemories()" class="flex items-center justify-center text-base px-3 py-2 rounded-full transition-all duration-300 hover:bg-opacity-10 hover:bg-[#2E4B2C]" style="color: #2E4B2C; font-family: 'Noto Sans SC', serif; width: 40px; height: 40px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- 页面标题 -->
+            <div class="text-center mb-6" style="margin-top: 0px;">
+                <div class="text-center">
+                    <h2 class="text-3xl font-bold" style="font-size: 32px; font-weight: 700; font-family: 'Noto Sans SC', serif; color: #2E4B2C; line-height: 1.4; letter-spacing: 0.08em; text-shadow: 2px 2px 4px rgba(46, 75, 44, 0.15);">
+                        近期回忆
+                    </h2>
+                </div>
+            </div>
+            
+            <!-- 记忆卡片容器 -->
+            <div id="memories-container" class="overflow-y-auto px-4" style="height: calc(100vh - 200px); max-height: 600px; padding-bottom: 20px;">
+                <!-- 加载提示 -->
+                <div id="memories-loading" class="text-center py-8">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#2E4B2C]" style="border-color: #2E4B2C;"></div>
+                    <p class="mt-4" style="color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif;">正在整理您的回忆...</p>
+                </div>
+                
+                <!-- 记忆卡片列表 -->
+                <div id="memories-list" class="hidden space-y-4">
+                    <!-- 卡片将通过JavaScript动态生成 -->
+                </div>
+                
+                <!-- 空状态 -->
+                <div id="memories-empty" class="hidden text-center py-8">
+                    <p style="color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif;">暂无回忆数据</p>
+                </div>
+                
+                <!-- 错误提示 -->
+                <div id="memories-error" class="hidden text-center py-8">
+                    <p class="text-red-500 mb-4" style="font-family: 'Noto Sans SC', sans-serif;">加载失败，请重试</p>
+                    <button onclick="loadMemories()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95" style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%); color: white; font-family: 'Noto Sans SC', sans-serif; font-weight: 600;">
+                        重新加载
                     </button>
                 </div>
             </div>
@@ -2666,6 +2718,196 @@ ${window.familyInfo ? JSON.stringify(window.familyInfo, null, 2) : '（信息较
                     console.error('复制失败:', err);
                     showError('复制失败，请手动复制');
                 });
+            }
+        }
+        
+        // ==================== 记忆页面功能 ====================
+        
+        /**
+         * 显示记忆页面
+         */
+        function showMemoriesPage() {
+            switchPage('memories-page');
+            // 页面显示后自动加载记忆
+            if (window.appState.sessionId) {
+                loadMemories();
+            } else {
+                showMemoriesError('会话未创建');
+            }
+        }
+        
+        /**
+         * 从记忆页面返回报告页面
+         */
+        function showReportPageFromMemories() {
+            switchPage('report-page');
+        }
+        
+        /**
+         * 加载记忆数据
+         */
+        async function loadMemories() {
+            if (!window.appState.sessionId) {
+                showMemoriesError('会话未创建');
+                return;
+            }
+            
+            const loading = document.getElementById('memories-loading');
+            const list = document.getElementById('memories-list');
+            const empty = document.getElementById('memories-empty');
+            const error = document.getElementById('memories-error');
+            
+            // 显示加载状态
+            if (loading) loading.classList.remove('hidden');
+            if (list) list.classList.add('hidden');
+            if (empty) empty.classList.add('hidden');
+            if (error) error.classList.add('hidden');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/memories/summarize`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: window.appState.sessionId
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                const memories = result.memories || [];
+                
+                // 隐藏加载状态
+                if (loading) loading.classList.add('hidden');
+                
+                if (memories.length === 0) {
+                    // 显示空状态
+                    if (empty) empty.classList.remove('hidden');
+                } else {
+                    // 渲染记忆卡片
+                    renderMemories(memories);
+                    if (list) list.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('加载记忆失败:', error);
+                if (loading) loading.classList.add('hidden');
+                showMemoriesError('加载失败，请重试');
+            }
+        }
+        
+        /**
+         * 渲染记忆卡片列表
+         */
+        function renderMemories(memories) {
+            const list = document.getElementById('memories-list');
+            if (!list) return;
+            
+            // 清空现有内容
+            list.innerHTML = '';
+            
+            memories.forEach((memory, index) => {
+                const cardId = `memory-card-${index}`;
+                const card = document.createElement('div');
+                card.id = cardId;
+                card.className = 'memory-card';
+                card.style.cssText = `
+                    background: rgba(255, 255, 255, 0.9);
+                    border-radius: 16px;
+                    padding: 20px;
+                    box-shadow: 0 4px 12px rgba(46, 75, 44, 0.1);
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    border: 1px solid rgba(212, 175, 55, 0.15);
+                `;
+                
+                card.innerHTML = `
+                    <div class="memory-card-header" style="display: flex; align-items: center; justify-content: space-between;">
+                        <h3 class="memory-card-title" style="font-size: 18px; font-weight: 600; color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif; margin: 0;">
+                            ${memory.title}
+                        </h3>
+                        <svg class="memory-card-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" style="transition: transform 0.3s ease; color: #2E4B2C;">
+                            <path d="M9,18L15,12L9,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="memory-card-content" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(212, 175, 55, 0.2);">
+                        <p style="color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif; line-height: 1.8; margin: 0;">
+                            ${memory.content}
+                        </p>
+                    </div>
+                `;
+                
+                // 添加点击事件
+                card.addEventListener('click', () => toggleMemoryCard(cardId));
+                
+                // 添加悬停效果
+                card.addEventListener('mouseenter', () => {
+                    card.style.boxShadow = '0 6px 16px rgba(46, 75, 44, 0.15)';
+                    card.style.transform = 'translateY(-2px)';
+                });
+                card.addEventListener('mouseleave', () => {
+                    if (!card.querySelector('.memory-card-content').style.display || 
+                        card.querySelector('.memory-card-content').style.display === 'none') {
+                        card.style.boxShadow = '0 4px 12px rgba(46, 75, 44, 0.1)';
+                        card.style.transform = 'translateY(0)';
+                    }
+                });
+                
+                list.appendChild(card);
+            });
+        }
+        
+        /**
+         * 切换记忆卡片展开/收起
+         */
+        function toggleMemoryCard(cardId) {
+            const card = document.getElementById(cardId);
+            if (!card) return;
+            
+            const content = card.querySelector('.memory-card-content');
+            const arrow = card.querySelector('.memory-card-arrow');
+            
+            if (!content || !arrow) return;
+            
+            const isExpanded = content.style.display !== 'none';
+            
+            if (isExpanded) {
+                // 收起
+                content.style.display = 'none';
+                arrow.style.transform = 'rotate(0deg)';
+                card.style.boxShadow = '0 4px 12px rgba(46, 75, 44, 0.1)';
+                card.style.transform = 'translateY(0)';
+            } else {
+                // 展开
+                content.style.display = 'block';
+                arrow.style.transform = 'rotate(90deg)';
+                card.style.boxShadow = '0 6px 16px rgba(46, 75, 44, 0.15)';
+                card.style.transform = 'translateY(-2px)';
+                
+                // 滚动到卡片位置
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+        
+        /**
+         * 显示记忆页面错误
+         */
+        function showMemoriesError(message) {
+            const loading = document.getElementById('memories-loading');
+            const list = document.getElementById('memories-list');
+            const empty = document.getElementById('memories-empty');
+            const error = document.getElementById('memories-error');
+            
+            if (loading) loading.classList.add('hidden');
+            if (list) list.classList.add('hidden');
+            if (empty) empty.classList.add('hidden');
+            if (error) {
+                error.classList.remove('hidden');
+                const errorMsg = error.querySelector('p');
+                if (errorMsg) errorMsg.textContent = message;
             }
         }
         

@@ -13,6 +13,7 @@ import redis.asyncio as redis
 from app.utils.logger import logger
 from app.config import settings
 from app.utils.api_key_manager import APIKeyManager
+from app.services.gateway_service import GatewayService
 import json
 
 
@@ -72,6 +73,7 @@ class AIService:
 
         self._llm_client: Optional[AsyncOpenAI] = None
         self._llm_model: str = "deepseek-chat"
+        self.gateway_service = GatewayService()
 
     # --------------------------
     # settings helper
@@ -701,3 +703,133 @@ class AIService:
         except Exception as e:
             logger.error(f"抽取失败：{e}")
             return {}
+
+    # --------------------------
+    # AI: Summarize memories from conversation
+    # --------------------------
+    async def summarize_memories(self, session_id: str) -> List[Dict[str, str]]:
+        """
+        总结对话历史，生成记忆卡片
+        返回格式: [{"title": "记忆标题", "content": "详细内容"}, ...]
+        """
+        try:
+            state = await self._load_state(session_id)
+            collected = state.get("collected_data", {})
+            asked_questions = state.get("asked_questions", [])
+            unparsed = collected.get("_unparsed", [])
+            
+            # 构建对话历史文本
+            conversation_text = ""
+            if unparsed:
+                conversation_text = "对话历史：\n"
+                for item in unparsed:
+                    q = item.get("q", "")
+                    a = item.get("a", "")
+                    if q and a:
+                        conversation_text += f"问：{q}\n答：{a}\n\n"
+            
+            # 如果没有对话历史，从collected_data中提取信息
+            if not conversation_text:
+                # 尝试从collected_data中提取文本信息
+                user_profile = collected.get("user_profile", {})
+                if user_profile:
+                    conversation_text = f"用户信息：{json.dumps(user_profile, ensure_ascii=False)}\n"
+                
+                # 提取其他收集到的信息
+                for key, value in collected.items():
+                    if key not in ["_unknown", "_unparsed", "user_profile"] and value:
+                        conversation_text += f"{key}: {json.dumps(value, ensure_ascii=False)}\n"
+            
+            if not conversation_text.strip():
+                logger.warning(f"Session {session_id} has no conversation history to summarize")
+                return []
+            
+            # 调用AI总结记忆（使用gateway_service，与step3保持一致）
+            prompt = f"""
+你是一位温暖的家族记忆整理者。请从以下对话历史中，提取出3-8个温暖、有情感、有画面感的记忆片段。
+
+对话历史：
+{conversation_text}
+
+要求：
+1. 每个记忆片段应该是一个独立的、完整的场景或故事
+2. 标题要简洁、有诗意、能唤起情感（如"奶奶的童谣"、"爷爷的锄头"、"老槐树下的午后"等）
+3. 内容要详细、有画面感、有温度，像在讲述一个真实的故事
+4. 内容应该包含具体的场景、人物、情感和细节
+5. 如果对话中提到的是模糊信息，可以适当发挥，但要基于对话内容
+6. 返回JSON数组格式，每个元素包含title和content字段
+
+示例格式：
+[
+  {{
+    "title": "奶奶的童谣",
+    "content": "夏天的午后，老槐树下总是一片浓荫。奶奶坐在竹椅上，我趴在她膝头，听她用方言轻轻哼："月亮粑粑，肚里坐个爹爹……"蒲扇摇得慢，风里有皂角的味道。她的声音像晒暖的棉花，软软的，每一个字都带着旧日的光晕。"
+  }},
+  {{
+    "title": "爷爷的锄头",
+    "content": "爷爷的锄头总是擦得锃亮，手柄被岁月磨得光滑。每天清晨，他扛着锄头走向田间，背影在晨光中拉得很长。那把锄头见证了他一生的劳作，也见证了我们家族的根。"
+  }}
+]
+
+只返回JSON数组，不要其他文字。
+"""
+            try:
+                # 使用gateway_service调用DeepSeek模型（与step3报告生成保持一致）
+                content = await self.gateway_service.llm_chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.8,
+                    timeout=240.0  # 4分钟超时
+                )
+                content = content.strip()
+                
+                # 清理JSON格式
+                if content.startswith("```"):
+                    content = content.strip("`")
+                    content = content.replace("json", "", 1).strip()
+                
+                # 解析JSON
+                memories = json.loads(content)
+                if not isinstance(memories, list):
+                    logger.warning(f"AI返回的不是数组格式: {type(memories)}")
+                    return []
+                
+                # 验证和清理数据
+                result = []
+                for mem in memories:
+                    if isinstance(mem, dict) and "title" in mem and "content" in mem:
+                        result.append({
+                            "title": str(mem["title"]).strip(),
+                            "content": str(mem["content"]).strip()
+                        })
+                
+                logger.info(f"成功生成 {len(result)} 个记忆卡片 for session {session_id}")
+                return result
+                
+            except ValueError as e:
+                # gateway_service可能抛出ValueError（如API密钥未配置）
+                current_key = APIKeyManager.get_deepseek_key()
+                key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+                logger.error(f"总结记忆失败 - 配置错误: {e}")
+                logger.error(f"  使用的密钥: {key_preview}")
+                return []
+            except TimeoutError as e:
+                logger.error(f"总结记忆失败 - 超时错误: {e}")
+                return []
+            except json.JSONDecodeError as e:
+                logger.error(f"总结记忆失败 - JSON解析错误: {e}")
+                logger.error(f"AI返回内容: {content[:200] if 'content' in locals() else 'N/A'}")
+                return []
+            except Exception as e:
+                logger.error(f"总结记忆失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return []
+                
+        except ValueError as e:
+            logger.error(f"Session {session_id} not found: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"总结记忆时发生错误: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
