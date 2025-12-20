@@ -160,6 +160,11 @@ DEEPSEEK_MODEL=deepseek-chat
 BOCHA_API_KEY=your_bocha_api_key_here
 BOCHA_API_BASE_URL=https://api.bochaai.com/v1
 
+# 即梦4.0 API 配置（图片生成）
+SEEDREAM_API_KEY=your_seedream_api_key_here
+SEEDREAM_API_BASE_URL=https://api.302.ai
+SEEDREAM_MODEL=doubao-seedream-4-0-250828
+
 # 认证配置
 SECRET_KEY=your_secret_key_here
 ALGORITHM=HS256
@@ -499,6 +504,34 @@ AI 问答模块通过多轮对话逐步收集家族信息，使用 DeepSeek LLM 
 
 生成时间轴。
 
+**POST `/generate/images`**
+
+基于报告生成图片（使用即梦4.0）。
+
+**请求体**：
+```json
+{
+  "session_id": "abc123",
+  "num_images": 1,  // 可选，1-2，默认1
+  "size": "2K"      // 可选，图片分辨率，默认"2K"
+}
+```
+
+**响应**：
+```json
+{
+  "images": [
+    "https://example.com/generated_image1.png"
+  ],
+  "count": 1,
+  "session_id": "abc123"
+}
+```
+
+**注意**：需要先调用 `/generate/report` 生成报告。
+
+详细文档请参考：[图片生成指南](./image_generation_guide.md)
+
 #### 报告结构
 
 生成的报告包含以下章节：
@@ -612,6 +645,7 @@ AI 问答模块通过多轮对话逐步收集家族信息，使用 DeepSeek LLM 
 | POST | `/generate/report` | 生成家族报告 |
 | POST | `/generate/biography/{person_id}` | 生成个人传记 |
 | POST | `/generate/timeline/{person_id}` | 生成时间轴 |
+| POST | `/generate/images` | 基于报告生成图片（即梦4.0） |
 
 #### 会话管理
 
@@ -1004,6 +1038,20 @@ A: 目前支持：
 
 A: 修改 `backend/app/services/output_service.py` 中的报告生成提示词。
 
+### Q9: 如何基于报告生成图片？
+
+A: 使用图片生成接口：
+```bash
+POST /generate/images
+{
+  "session_id": "xxx",
+  "num_images": 1,  // 1-2张
+  "size": "2K"
+}
+```
+
+**注意**：需要先生成报告。详细说明请参考：[图片生成指南](./image_generation_guide.md)
+
 ---
 
 ## 相关文档
@@ -1012,11 +1060,18 @@ A: 修改 `backend/app/services/output_service.py` 中的报告生成提示词�
 - [会话管理 API](./session_api.md)
 - [性能优化](./performance_optimization.md)
 - [超时问题诊断](./troubleshooting_timeout.md)
+- [图片生成指南](./image_generation_guide.md)
 - [功能特性](../FEATURES.md)
 
 ---
 
 ## 更新日志
+
+### v1.1.0 (2024-01-01)
+
+- ✅ 实现基于报告生成图片功能（即梦4.0）
+- ✅ 智能提示词生成
+- ✅ 图片URL自动保存到报告
 
 ### v1.0.0 (2024-01-01)
 

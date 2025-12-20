@@ -32,10 +32,23 @@ async def get_session(session_id: str):
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         
         # 移除 MongoDB 的 _id，转换为可序列化的格式
+        # 兼容多种数据格式
+        family_graph = session.get("family_graph", {})
+        if isinstance(family_graph, dict) and "collected_data" in family_graph:
+            # 新格式：family_graph.collected_data
+            collected_data = family_graph.get("collected_data", {})
+        elif isinstance(family_graph, dict) and family_graph:
+            # 旧格式：family_graph 直接是 collected_data
+            collected_data = family_graph
+        else:
+            # 备用：从 collected_data 字段获取
+            collected_data = session.get("collected_data", {})
+        
         session_data = {
             "session_id": session_id,
             "user_input": session.get("user_input", {}),
-            "collected_data": session.get("family_graph", {}).get("collected_data", session.get("collected_data", {})),
+            "user_profile": session.get("user_profile", {}),
+            "collected_data": collected_data,
             "family_graph": session.get("family_graph", {}),
             "created_at": session.get("created_at"),
             "updated_at": session.get("updated_at"),

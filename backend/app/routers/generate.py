@@ -28,6 +28,13 @@ class BiographyRequest(BaseModel):
     session_id: str
 
 
+class ImageGenerationRequest(BaseModel):
+    """生成图片请求模型"""
+    session_id: str
+    num_images: int = 1  # 生成图片数量（1-2）
+    size: str = "2K"  # 图片分辨率
+
+
 @router.post("/report")
 async def generate_report(request: ReportRequest):
     """
@@ -73,4 +80,38 @@ async def generate_biography(request: BiographyRequest):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error generating biography: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/images")
+async def generate_images(request: ImageGenerationRequest):
+    """
+    基于报告生成图片（使用即梦4.0）
+    根据已生成的家族报告，生成1-2张相关的图片
+    
+    注意：需要先调用 /generate/report 生成报告
+    """
+    try:
+        # 验证参数
+        if request.num_images < 1 or request.num_images > 2:
+            raise HTTPException(
+                status_code=400,
+                detail="num_images must be between 1 and 2"
+            )
+        
+        image_urls = await output_service.generate_images_from_report(
+            session_id=request.session_id,
+            num_images=request.num_images,
+            size=request.size
+        )
+        
+        return {
+            "images": image_urls,
+            "count": len(image_urls),
+            "session_id": request.session_id
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error generating images: {e}")
         raise HTTPException(status_code=500, detail=str(e))

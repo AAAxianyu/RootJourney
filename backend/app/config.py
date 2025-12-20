@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     bocha_api_key: Optional[str] = None
     bocha_api_base_url: str = "https://api.bochaai.com/v1"
     
+    # 即梦4.0 API配置（图片生成）
+    seedream_api_key: Optional[str] = None
+    seedream_api_base_url: str = "https://api.302.ai"
+    seedream_model: str = "doubao-seedream-4-0-250828"
+    
     # 认证配置
     secret_key: Optional[str] = None
     algorithm: str = "HS256"

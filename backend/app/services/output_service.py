@@ -71,10 +71,21 @@ class OutputService:
         if not session:
             raise ValueError(f"Session {session_id} not found")
         
-        # 获取用户信息和收集的数据
-        collected_data = session.get("family_graph", {}).get("collected_data", {})
-        if not collected_data:
+        # 获取用户信息和收集的数据（兼容多种格式）
+        family_graph = session.get("family_graph", {})
+        if isinstance(family_graph, dict) and "collected_data" in family_graph:
+            # 新格式：family_graph.collected_data
+            collected_data = family_graph.get("collected_data", {})
+        elif isinstance(family_graph, dict) and family_graph:
+            # 旧格式：family_graph 直接就是 collected_data
+            collected_data = family_graph
+        else:
+            # 尝试从 collected_data 字段获取
             collected_data = session.get("collected_data", {})
+        
+        if not collected_data:
+            logger.warning(f"No collected_data found for session {session_id}, using empty dict")
+            collected_data = {}
         
         user_input = session.get("user_input", {})
         
@@ -216,6 +227,157 @@ class OutputService:
             logger.error(f"Error saving report to database: {e}")
         
         return report_data
+    
+    async def generate_images_from_report(
+        self,
+        session_id: str,
+        num_images: int = 1,
+        size: str = "2K"
+    ) -> List[str]:
+        """
+        基于报告生成图片（使用即梦4.0）
+        
+        Args:
+            session_id: 会话ID
+            num_images: 生成图片数量（1-2，默认1）
+            size: 图片分辨率（默认"2K"）
+        
+        Returns:
+            图片URL列表
+        """
+        db = await get_mongodb_db()
+        session = await db.sessions.find_one({"_id": session_id})
+        
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        
+        # 获取报告
+        report = session.get("report")
+        if not report:
+            raise ValueError(f"Report not found for session {session_id}. Please generate report first.")
+        
+        # 限制图片数量在1-2之间
+        num_images = max(1, min(2, num_images))
+        
+        # 从报告中提取关键信息用于生成图片提示词
+        report_text = report.get("report_text", "")
+        user_name = report.get("user_info", {}).get("name", "用户")
+        possible_families = report.get("possible_families", [])
+        
+        # 提取家族名称和主要地区
+        family_names = [f.get("family_name", "") for f in possible_families[:2] if f.get("family_name")]
+        main_regions = []
+        for family in possible_families[:2]:
+            regions = family.get("main_regions", [])
+            if regions:
+                main_regions.extend(regions[:2])
+        
+        # 使用DeepSeek生成图片提示词
+        prompt_generation_text = f"""
+基于以下家族历史报告，生成{num_images}个图片描述提示词，用于AI图片生成。
+
+**用户信息：**
+- 姓名：{user_name}
+- 家族：{', '.join(family_names) if family_names else '历史大家族'}
+- 主要地区：{', '.join(set(main_regions)) if main_regions else '中国'}
+
+**报告摘要（前500字）：**
+{report_text[:500]}
+
+请生成{num_images}个图片描述提示词，要求：
+1. 每个提示词描述一个与家族历史相关的场景
+2. 可以包括：家族迁徙场景、历史人物形象、家族文化传承、家族建筑或地标等
+3. 风格：中国风、历史感、温暖、有故事性
+4. 每个提示词控制在100字以内
+5. 用中文描述
+
+请以JSON格式返回，格式如下：
+{{
+  "prompts": [
+    "第一个图片描述",
+    "第二个图片描述"
+  ]
+}}
+
+只返回JSON，不要其他文字。
+"""
+        
+        try:
+            # 使用DeepSeek生成图片提示词
+            prompt_response = await self.gateway_service.llm_chat(
+                messages=[{"role": "user", "content": prompt_generation_text}],
+                temperature=0.8,
+                timeout=60
+            )
+            
+            # 解析JSON响应
+            import re
+            json_match = re.search(r'\{[^{}]*"prompts"[^{}]*\[.*?\]', prompt_response, re.DOTALL)
+            if json_match:
+                prompts_data = json.loads(json_match.group())
+                prompts = prompts_data.get("prompts", [])
+            else:
+                # 如果解析失败，尝试直接解析整个响应
+                try:
+                    prompts_data = json.loads(prompt_response)
+                    prompts = prompts_data.get("prompts", [])
+                except:
+                    # 如果还是失败，使用默认提示词
+                    prompts = [
+                        f"中国风家族历史场景，{user_name}的家族传承，{', '.join(family_names) if family_names else '历史大家族'}，温暖的历史氛围",
+                        f"家族文化传承场景，{', '.join(set(main_regions)) if main_regions else '中国'}地区，历史建筑，家族故事"
+                    ][:num_images]
+            
+            # 确保提示词数量正确
+            prompts = prompts[:num_images]
+            if len(prompts) < num_images:
+                # 如果提示词不够，补充默认提示词
+                default_prompt = f"中国风家族历史场景，{user_name}的家族传承，温暖的历史氛围"
+                prompts.extend([default_prompt] * (num_images - len(prompts)))
+            
+            # 使用即梦4.0生成图片
+            image_urls = []
+            for i, prompt in enumerate(prompts):
+                try:
+                    logger.info(f"Generating image {i+1}/{num_images} with prompt: {prompt[:50]}...")
+                    urls = await self.gateway_service.generate_image_seedream(
+                        prompt=prompt,
+                        num_images=1,
+                        size=size,
+                        watermark=False
+                    )
+                    if urls:
+                        image_urls.extend(urls)
+                except Exception as e:
+                    logger.error(f"Error generating image {i+1}: {e}")
+                    # 继续生成其他图片，不中断整个流程
+            
+            if not image_urls:
+                raise Exception("未能生成任何图片")
+            
+            # 更新报告，添加图片URL
+            report["images"] = image_urls
+            report["images_generated_at"] = datetime.now().isoformat()
+            
+            # 保存到数据库
+            try:
+                await db.sessions.update_one(
+                    {"_id": session_id},
+                    {
+                        "$set": {
+                            "report": report
+                        }
+                    }
+                )
+                logger.info(f"Images saved to report for session {session_id}")
+            except Exception as e:
+                logger.error(f"Error saving images to database: {e}")
+            
+            return image_urls
+            
+        except Exception as e:
+            logger.error(f"Error generating images from report: {e}")
+            raise
     
     async def build_timeline(self, session_id: str, family_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """

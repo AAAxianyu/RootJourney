@@ -1,9 +1,10 @@
 """
 API Gateway 统一服务
-封装 DeepSeek LLM API 调用
+封装 DeepSeek LLM API 调用和即梦4.0图片生成
 """
 import json
 import asyncio
+import httpx
 from typing import Optional, Dict, Any, List
 from openai import AsyncOpenAI
 from app.config import settings
@@ -124,4 +125,77 @@ JSON Schema：
             return json.loads(content)
         except Exception as e:
             logger.error(f"LLM extract error: {e}")
+            raise
+    
+    async def generate_image_seedream(
+        self,
+        prompt: str,
+        num_images: int = 1,
+        size: str = "2K",
+        watermark: bool = False,
+        timeout: float = 120.0
+    ) -> List[str]:
+        """
+        使用即梦4.0生成图片
+        
+        Args:
+            prompt: 图片描述提示词（建议300汉字或600英文单词以内）
+            num_images: 生成图片数量（1-15，默认1）
+            size: 图片分辨率（默认"2K"）
+            watermark: 是否添加水印（默认False）
+            timeout: 超时时间（秒，默认120秒）
+        
+        Returns:
+            图片URL列表
+        """
+        if not settings.seedream_api_key:
+            raise ValueError("即梦4.0 API key not configured")
+        
+        if num_images < 1 or num_images > 15:
+            raise ValueError("num_images must be between 1 and 15")
+        
+        try:
+            url = f"{settings.seedream_api_base_url}/doubao/images/generations"
+            headers = {
+                "Authorization": f"Bearer {settings.seedream_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": settings.seedream_model,
+                "prompt": prompt,
+                "n": num_images,
+                "size": size,
+                "response_format": "url",
+                "stream": False,
+                "watermark": watermark
+            }
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                
+                if response.status_code != 200:
+                    logger.error(f"Seedream API error: {response.status_code} - {response.text}")
+                    raise Exception(f"即梦4.0 API 调用失败: {response.status_code}")
+                
+                data = response.json()
+                
+                # 检查是否有错误
+                if data.get("error"):
+                    raise Exception(f"即梦4.0 API 错误: {data.get('error')}")
+                
+                # 提取图片URL
+                image_urls = []
+                for item in data.get("data", []):
+                    if item.get("url"):
+                        image_urls.append(item["url"])
+                
+                logger.info(f"Generated {len(image_urls)} images using Seedream 4.0")
+                return image_urls
+                
+        except httpx.TimeoutException:
+            logger.error(f"Seedream API timeout after {timeout}s")
+            raise TimeoutError(f"即梦4.0 API 调用超时（{timeout}秒）")
+        except Exception as e:
+            logger.error(f"Seedream image generation error: {e}")
             raise

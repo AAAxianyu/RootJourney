@@ -295,9 +295,10 @@ class AIService:
         # 可选：Mongo 持久化 session 记录（失败也不影响）
         try:
             db = await self._get_mongo_db()
+            # 统一存储格式：family_graph.collected_data
             await db.sessions.update_one(
                 {"_id": session_id},
-                {"$set": {"user_profile": profile_dict, "family_graph": collected}},
+                {"$set": {"user_profile": profile_dict, "family_graph": {"collected_data": collected}}},
                 upsert=True,
             )
         except Exception as e:
@@ -468,13 +469,22 @@ class AIService:
     async def _persist_mongo(self, session_id: str, collected: Dict[str, Any]) -> None:
         try:
             db = await self._get_mongo_db()
-            await db.sessions.update_one(
+            # 统一存储格式：family_graph.collected_data
+            update_result = await db.sessions.update_one(
                 {"_id": session_id},
-                {"$set": {"family_graph": collected}},
+                {"$set": {"family_graph": {"collected_data": collected}}},
                 upsert=True,
             )
+            # 记录保存结果（用于调试）
+            if update_result.modified_count > 0 or update_result.upserted_id:
+                logger.debug(f"Mongo 持久化成功 - session_id: {session_id}, modified: {update_result.modified_count}, upserted: {bool(update_result.upserted_id)}")
+                logger.debug(f"保存的数据 keys: {list(collected.keys())}")
+            else:
+                logger.warning(f"Mongo 持久化未更新任何文档 - session_id: {session_id}")
         except Exception as e:
             logger.warning(f"Mongo 持久化失败（不影响主流程）：{e}")
+            import traceback
+            logger.debug(traceback.format_exc())
 
     # --------------------------
     # AI: candidate questions (Option A)
