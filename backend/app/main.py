@@ -13,10 +13,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# 配置CORS
+# 配置CORS - 允许前端访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:80"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:80",
+        "http://localhost",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:80",
+        "http://127.0.0.1",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
