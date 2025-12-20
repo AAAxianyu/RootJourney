@@ -166,6 +166,18 @@ class AIService:
     # --------------------------
     # Utilities
     # --------------------------
+    def _is_end_request(self, answer: str) -> bool:
+        """检查用户是否想要结束对话"""
+        if not answer:
+            return False
+        answer_lower = answer.strip().lower()
+        end_keywords = [
+            "结束", "完成", "好了", "够了", "可以了", 
+            "结束对话", "完成对话", "不再继续", "不想继续",
+            "停止", "退出", "不聊了", "结束吧", "完成吧"
+        ]
+        return any(keyword in answer_lower for keyword in end_keywords)
+    
     def _is_skip(self, answer: str) -> bool:
         a = (answer or "").strip()
         if a == "":
@@ -318,7 +330,7 @@ class AIService:
     async def process_answer(self, session_id: str, answer: str) -> Dict[str, Any]:
         """
         处理用户回答，生成下一个问题
-        如果数据收集完成，返回 None
+        如果数据收集完成或达到最大轮数，返回完成状态
         """
         state = await self._load_state(session_id)
 
@@ -328,6 +340,32 @@ class AIService:
         collected = state.get("collected_data") or {}
         asked = state.get("asked_questions") or []
         count = int(state.get("question_count") or 0)
+        min_rounds = settings.min_questions
+        
+        # 检查用户是否想要主动结束对话
+        if self._is_end_request(answer):
+            # 如果至少完成了最少轮数，允许结束
+            if count >= min_rounds:
+                state["collected_data"] = collected
+                state["question_count"] = count + 1
+                state["current_question"] = None
+                state["step"] = "complete"
+                await self._save_state(session_id, state)
+                await self._persist_mongo(session_id, collected)
+                return {
+                    "status": "complete",
+                    "question": None,
+                    "step": "complete",
+                    "message": "感谢您的分享，对话已结束。您可以生成报告了。"
+                }
+            else:
+                # 未达到最少轮数，提示用户
+                return {
+                    "status": "continue",
+                    "question": f"我们还需要再聊几轮才能更好地了解您的家族历史。您刚才说\"{answer}\"，能再详细说说吗？",
+                    "step": step,
+                    "message": f"还需要至少 {min_rounds - count} 轮对话"
+                }
 
         # 1) “不知道/没有” 不是错误：记录并继续推进
         if self._is_skip(answer):

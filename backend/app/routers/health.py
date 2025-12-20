@@ -6,6 +6,7 @@ from typing import Dict, Any
 from app.config import settings
 from app.services.gateway_service import GatewayService
 from app.utils.logger import logger
+from app.utils.api_key_manager import APIKeyManager
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -27,32 +28,19 @@ async def api_status():
     检查所有第三方 API 的配置状态
     不进行实际调用，只检查配置是否完整
     """
+    deepseek_key = APIKeyManager.get_deepseek_key()
+    
+    bocha_key = settings.bocha_api_key
+    
     status = {
-        "openai": {
-            "configured": bool(settings.openai_api_key),
-            "status": "configured" if settings.openai_api_key else "not_configured"
+        "deepseek": {
+            "configured": bool(deepseek_key or settings.deepseek_api_key),
+            "status": "configured" if (deepseek_key or settings.deepseek_api_key) else "not_configured"
         },
-        "xunfei": {
-            "configured": all([
-                settings.xunfei_app_id,
-                settings.xunfei_api_key,
-                settings.xunfei_api_secret
-            ]),
-            "status": "configured" if all([
-                settings.xunfei_app_id,
-                settings.xunfei_api_key,
-                settings.xunfei_api_secret
-            ]) else "not_configured"
-        },
-        "google_search": {
-            "configured": bool(
-                settings.google_search_api_key and 
-                settings.google_search_engine_id
-            ),
-            "status": "configured" if (
-                settings.google_search_api_key and 
-                settings.google_search_engine_id
-            ) else "not_configured"
+        "bochaai": {
+            "configured": bool(bocha_key),
+            "status": "configured" if bocha_key else "not_configured",
+            "note": "博查API - 真正的联网搜索"
         },
         "mongodb": {
             "configured": bool(settings.mongodb_url),
@@ -66,12 +54,11 @@ async def api_status():
     
     # 计算总体状态
     all_configured = all([
-        status["openai"]["configured"],
-        status["xunfei"]["configured"],
-        status["google_search"]["configured"],
+        status["deepseek"]["configured"],
         status["mongodb"]["configured"],
         status["redis"]["configured"]
     ])
+    # 博查API是可选的，不影响总体状态
     
     return {
         "overall": "ready" if all_configured else "partial",
@@ -79,112 +66,34 @@ async def api_status():
     }
 
 
-@router.post("/test/openai")
-async def test_openai():
+@router.post("/test/deepseek")
+async def test_deepseek():
     """
-    测试 OpenAI API 连接
+    测试 DeepSeek API 连接
     实际调用 API 验证连接
     """
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=400, detail="OpenAI API key not configured")
+    deepseek_key = APIKeyManager.get_deepseek_key()
+    if not deepseek_key:
+        raise HTTPException(status_code=400, detail="DeepSeek API key not configured")
     
     try:
         # 测试简单的聊天请求
         response = await gateway_service.llm_chat(
             messages=[{"role": "user", "content": "Hello"}],
-            model="gpt-4",
             temperature=0.7
         )
         
         return {
             "success": True,
-            "service": "OpenAI",
+            "service": "DeepSeek",
             "message": "Connection successful",
             "test_response": response[:100] + "..." if len(response) > 100 else response
         }
     except Exception as e:
-        logger.error(f"OpenAI test error: {e}")
+        logger.error(f"DeepSeek test error: {e}")
         return {
             "success": False,
-            "service": "OpenAI",
-            "error": str(e)
-        }
-
-
-@router.post("/test/xunfei")
-async def test_xunfei():
-    """
-    测试讯飞 API 连接
-    注意：需要提供测试音频文件
-    """
-    if not all([settings.xunfei_app_id, settings.xunfei_api_key, settings.xunfei_api_secret]):
-        raise HTTPException(status_code=400, detail="讯飞 API 配置不完整")
-    
-    # 这里只检查配置，实际测试需要音频文件
-    # 可以通过 /api/voice/transcribe 接口进行实际测试
-    return {
-        "success": True,
-        "service": "Xunfei",
-        "message": "Configuration valid. Use /api/voice/transcribe to test with audio file",
-        "configured": True
-    }
-
-
-@router.post("/test/search")
-async def test_search():
-    """
-    测试 Google Search API 连接
-    实际调用 API 验证连接
-    """
-    if not (settings.google_search_api_key and settings.google_search_engine_id):
-        raise HTTPException(status_code=400, detail="Google Search API not configured")
-    
-    try:
-        # 测试搜索
-        results = await gateway_service.search("test", num_results=1)
-        
-        return {
-            "success": True,
-            "service": "Google Search",
-            "message": "Connection successful",
-            "test_results_count": len(results)
-        }
-    except Exception as e:
-        logger.error(f"Google Search test error: {e}")
-        return {
-            "success": False,
-            "service": "Google Search",
-            "error": str(e)
-        }
-
-
-@router.post("/test/image")
-async def test_image():
-    """
-    测试 DALL·E 图片生成
-    实际调用 API 验证连接
-    """
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=400, detail="OpenAI API key not configured")
-    
-    try:
-        # 测试图片生成（使用简单提示词）
-        image_url = await gateway_service.generate_image(
-            prompt="a simple red circle on white background",
-            size="256x256"
-        )
-        
-        return {
-            "success": True,
-            "service": "DALL·E",
-            "message": "Connection successful",
-            "test_image_url": image_url
-        }
-    except Exception as e:
-        logger.error(f"DALL·E test error: {e}")
-        return {
-            "success": False,
-            "service": "DALL·E",
+            "service": "DeepSeek",
             "error": str(e)
         }
 
@@ -235,38 +144,43 @@ async def test_all():
     """
     results = {}
     
-    # 测试 OpenAI
+    # 测试 DeepSeek
     try:
-        if settings.openai_api_key:
+        deepseek_key = APIKeyManager.get_deepseek_key()
+        if deepseek_key:
             response = await gateway_service.llm_chat(
-                messages=[{"role": "user", "content": "test"}],
-                model="gpt-4"
+                messages=[{"role": "user", "content": "test"}]
             )
-            results["openai"] = {"success": True, "message": "Connected"}
+            results["deepseek"] = {"success": True, "message": "Connected"}
         else:
-            results["openai"] = {"success": False, "message": "Not configured"}
+            results["deepseek"] = {"success": False, "message": "Not configured"}
     except Exception as e:
-        results["openai"] = {"success": False, "error": str(e)}
+        results["deepseek"] = {"success": False, "error": str(e)}
     
-    # 测试 Google Search
+    # 测试博查API（如果配置了）
     try:
-        if settings.google_search_api_key and settings.google_search_engine_id:
-            await gateway_service.search("test", num_results=1)
-            results["google_search"] = {"success": True, "message": "Connected"}
+        if settings.bocha_api_key:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{settings.bocha_api_base_url}/web-search",
+                    headers={
+                        "Authorization": f"Bearer {settings.bocha_api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "query": "测试",
+                        "count": 1
+                    }
+                )
+                if response.status_code == 200:
+                    results["bochaai"] = {"success": True, "message": "BochaAI web search connected"}
+                else:
+                    results["bochaai"] = {"success": False, "error": f"HTTP {response.status_code}"}
         else:
-            results["google_search"] = {"success": False, "message": "Not configured"}
+            results["bochaai"] = {"success": False, "message": "Not configured"}
     except Exception as e:
-        results["google_search"] = {"success": False, "error": str(e)}
-    
-    # 测试 DALL·E
-    try:
-        if settings.openai_api_key:
-            await gateway_service.generate_image("test", "256x256")
-            results["dalle"] = {"success": True, "message": "Connected"}
-        else:
-            results["dalle"] = {"success": False, "message": "Not configured"}
-    except Exception as e:
-        results["dalle"] = {"success": False, "error": str(e)}
+        results["bochaai"] = {"success": False, "error": str(e)}
     
     # 测试数据库
     try:
@@ -279,12 +193,6 @@ async def test_all():
     except Exception as e:
         results["database"] = {"success": False, "error": str(e)}
     
-    # 检查讯飞配置
-    if all([settings.xunfei_app_id, settings.xunfei_api_key, settings.xunfei_api_secret]):
-        results["xunfei"] = {"success": True, "message": "Configured (requires audio file to test)"}
-    else:
-        results["xunfei"] = {"success": False, "message": "Not configured"}
-    
     # 计算总体状态
     all_success = all(
         result.get("success", False) 
@@ -296,4 +204,3 @@ async def test_all():
         "overall": "all_connected" if all_success else "partial",
         "results": results
     }
-
