@@ -276,6 +276,13 @@ class OutputService:
 """
         
         # 构建报告数据
+        # 同时生成基于用户信息和搜索结果的时间轴（推测）
+        try:
+            timeline_data = await self.build_timeline(session_id)
+        except Exception as e:
+            logger.error(f"Error building timeline for session {session_id}: {e}")
+            timeline_data = {"events": []}
+
         report_data = {
             "title": f"{user_name}家族历史报告",
             "summary": f"基于{user_name}提供的信息和联网搜索，为您生成的家族历史报告",
@@ -289,7 +296,8 @@ class OutputService:
                 "name": user_name,
                 "birth_place": user_birth_place,
                 "current_location": user_current_location
-            }
+            },
+            "timeline": timeline_data
         }
         
         # 保存报告到数据库
@@ -319,6 +327,269 @@ class OutputService:
             logger.error(traceback.format_exc())
         
         return report_data
+
+    async def _build_timeline(self, session_id: str, family_filter: Optional[str] = None) -> Dict[str, Any]:
+        """构建家族时间轴（内部实现）：整合用户输入、家族搜索结果及联网信息，使用 LLM 推测事件时间并返回 JSON 格式的事件列表"""
+        db = await get_mongodb_db()
+        session = await db.sessions.find_one({"_id": session_id})
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+
+        # 尝试获取已存在的搜索结果或重新触发搜索
+        try:
+            search_results = await self.search_service.perform_search(session_id)
+        except Exception as e:
+            logger.warning(f"Search failed while building timeline: {e}")
+            search_results = {"possible_families": [], "family_histories": {}, "summary": {}}
+
+        user_input = session.get("user_input", {})
+        # 兼容 family_graph.collected_data 与 top-level collected_data 两种存储方式
+        family_graph = session.get("family_graph", {})
+        if isinstance(family_graph, dict) and "collected_data" in family_graph:
+            collected_data = family_graph.get("collected_data", {}) or {}
+        elif isinstance(family_graph, dict) and family_graph:
+            collected_data = family_graph or {}
+        else:
+            collected_data = session.get("collected_data", {}) or {}
+
+        prompt = f"""
+请基于以下信息，为该姓氏家族生成一个推测性的时间轴（按时间先后排序），只返回 JSON，格式为：
+{{
+  "events": [
+    {{"date": "YYYY 或 YYYY-MM-DD", "title": "事件标题", "description": "事件说明"}},
+    ...
+  ]
+}}
+
+要求：
+1. 使用从对话与全网搜索得到的信息（如下所示）。
+2. 即使没有确切年份，也请合理推测并写出大致年份（例如 1830s, 19th century 或 1873）。
+3. 事件应为与该姓氏家族密切相关的重要历史节点（迁徙、建国、名人、重要产业变化等），每个事件简洁明了。
+4. 如果信息不足，请基于最可能的历史背景推测（不要生成过度虚构的细节）。
+5. 最多生成20个事件。
+
+用户信息：{json.dumps(user_input, ensure_ascii=False)}
+收集数据摘要：{json.dumps({k: collected_data.get(k) for k in ['self_origin','father_origin','migration_history','grandfather_name','generation_char']}, ensure_ascii=False)}
+可能的大家族信息（摘要）：{json.dumps(search_results.get('family_histories', {}), ensure_ascii=False)[:2000]}
+家族筛选：{family_filter}
+
+请只返回 JSON，不要额外说明文字。
+"""
+        timeline = {"events": []}
+        try:
+            response = await self.gateway_service.llm_chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                timeout=120
+            )
+
+            # 尝试解析为 JSON
+            import json as _json
+            try:
+                parsed = _json.loads(response)
+                if isinstance(parsed, dict) and "events" in parsed:
+                    timeline = parsed
+                else:
+                    logger.warning("Timeline LLM response JSON did not contain 'events', falling back to parsing")
+            except Exception:
+                # 如果 LLM 没有直接返回 JSON，尝试提取 JSON 片段
+                try:
+                    start = response.find('{')
+                    end = response.rfind('}')
+                    if start != -1 and end != -1:
+                        possible = response[start:end+1]
+                        parsed = _json.loads(possible)
+                        if isinstance(parsed, dict) and "events" in parsed:
+                            timeline = parsed
+                except Exception as e:
+                    logger.warning(f"Failed to parse timeline JSON: {e}")
+
+        except Exception as e:
+            logger.error(f"Error calling LLM to build timeline: {e}")
+
+        # 规范化可能存在的字段（兼容不同的 collected_data 结构）
+        self_origin = collected_data.get('self_origin') or (collected_data.get('self') or {}).get('origin') or (collected_data.get('user_profile') or {}).get('birth_place')
+        father_origin = collected_data.get('father_origin') or (collected_data.get('father') or {}).get('origin')
+        migration_history = collected_data.get('migration_history') or collected_data.get('migration') or collected_data.get('_migration') or collected_data.get('_unparsed')
+        grandfather_name = collected_data.get('grandfather_name') or (collected_data.get('grandfather') or {}).get('name') or (collected_data.get('grandfather_name') if 'grandfather_name' in collected_data else None)
+        generation_char = collected_data.get('generation_char') or (collected_data.get('self') or {}).get('generation_name')
+
+        logger.info(f"Building timeline for session {session_id} - self_origin={self_origin}, father_origin={father_origin}, migration_history={'present' if migration_history else 'none'}, grandfather_name={grandfather_name}")
+
+        # 最后兜底：如果没有生成事件，基于已知信息构建简单时间点
+        if not timeline.get('events'):
+            events = []
+            # 尝试使用迁徙历史（如果存在）
+            migration = migration_history
+            if migration:
+                # migration 可能是字符串或数组
+                parts = migration if isinstance(migration, list) else str(migration).split('\n')
+                for part in parts[:5]:
+                    # 尝试提取年份
+                    import re
+                    m = re.search(r"(\d{4})", part)
+                    date = f"{m.group(1)}" if m else "未知年份"
+                    events.append({"date": date, "title": "迁徙记录", "description": part})
+
+            # 使用祖籍信息作为一个历史点
+            origin = self_origin or father_origin
+            if origin:
+                events.append({"date": "约1800-1900", "title": "家族主要起源地", "description": f"据记录，家族与{origin}有重要渊源"})
+
+            # 使用祖辈姓名做为历史点
+            if grandfather_name:
+                events.append({"date": "约1900-1950", "title": "家族重要人物", "description": f"家族记载中的人物：{grandfather_name}"})
+
+            timeline['events'] = events
+
+        # 最终确保事件按时间排序（尝试按年份排序，未知年份放后）
+        def extract_year(d):
+            import re
+            m = re.search(r"(\d{4})", str(d))
+            return int(m.group(1)) if m else 9999
+
+        events = timeline.get('events', [])
+
+        # 规范化每个事件，确保包含 details 字段（数组），并去重基本字段
+        normalized = []
+        seen_keys = set()
+        for ev in events:
+            date = ev.get('date', '未知年份')
+            title = ev.get('title', ev.get('event', '')[:50])
+            description = ev.get('description', ev.get('event', ''))
+            key = f"{date}|{title}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            details = ev.get('details')
+            if not details:
+                details = [{
+                    'type': ev.get('category', 'general'),
+                    'title': title,
+                    'description': description,
+                    'person': ev.get('person_name') or ev.get('person')
+                }]
+            normalized.append({
+                'date': date,
+                'title': title,
+                'description': description,
+                'details': details
+            })
+
+        # 如果事件数量不足 3 条，尝试调用 LLM 补充事件
+        if len(normalized) < 3:
+            needed = 3 - len(normalized)
+            try:
+                supplement_prompt = f"""
+基于以下已知信息与现有时间轴事件，补充至少 {needed} 个与该姓氏家族历史相关的重要时间点，使总事件数不少于 3 个，要求输出纯 JSON（只返回 JSON 对象），格式为：{{"events":[{{"date":"YYYY 或 YYYY-MM-DD","title":"事件标题","description":"事件说明","details":[{{"type":"migration|person|event|other","title":"","description":"","person":""}}]}}]}}。
+
+已知信息：
+用户输入：{json.dumps(user_input, ensure_ascii=False)}
+收集数据摘要：{json.dumps({k: collected_data.get(k) for k in ['self_origin','father_origin','migration_history','grandfather_name','generation_char']}, ensure_ascii=False)}
+现有事件：{json.dumps(normalized, ensure_ascii=False)}
+
+补充时请避免与现有事件重复，优先生成代表迁徙、名人、重大事件的节点，并在描述中说明这是基于资料推测还是确证（例如“推测：… ”）。最多补充 {needed} 条。
+"""
+                response = await self.gateway_service.llm_chat(
+                    messages=[{"role": "user", "content": supplement_prompt}],
+                    temperature=0.7,
+                    timeout=120
+                )
+
+                import json as _json
+                try:
+                    parsed = _json.loads(response)
+                    if isinstance(parsed, dict) and 'events' in parsed:
+                        for ev in parsed['events']:
+                            date = ev.get('date', '未知年份')
+                            title = ev.get('title', '')
+                            description = ev.get('description', '')
+                            details = ev.get('details') or [{'type': 'generated', 'title': title, 'description': description}]
+                            key = f"{date}|{title}"
+                            if key not in seen_keys:
+                                seen_keys.add(key)
+                                normalized.append({
+                                    'date': date,
+                                    'title': title,
+                                    'description': description,
+                                    'details': details
+                                })
+                except Exception:
+                    logger.warning('Supplement timeline LLM response failed to parse as JSON')
+            except Exception as e:
+                logger.error(f"Error calling LLM to supplement timeline: {e}")
+
+        # 兜底：如果仍不足 3 个，基于已有信息合成简单事件
+        if len(normalized) < 3:
+            origin = self_origin or father_origin
+            if origin:
+                key = f"约1800-1900|家族起源地：{origin}"
+                if key not in seen_keys:
+                    normalized.append({
+                        'date': '约1800-1900',
+                        'title': f'家族主要起源地：{origin}',
+                        'description': f'据口述或档案，家族与 {origin} 有重要渊源（注：此为推测）。',
+                        'details': [{
+                            'type': 'origin',
+                            'title': f'来自 {origin}',
+                            'description': f'家族主要与 {origin} 有联系（推测）'
+                        }]
+                    })
+            migration = migration_history
+            if migration and len(normalized) < 3:
+                parts = migration if isinstance(migration, list) else str(migration).split('\n')[:3]
+                for part in parts:
+                    import re
+                    m = re.search(r"(\d{4})", part)
+                    date = m.group(1) if m else '未知年份'
+                    key = f"{date}|迁徙：{part[:30]}"
+                    if key not in seen_keys and len(normalized) < 3:
+                        normalized.append({
+                            'date': date,
+                            'title': '迁徙记录',
+                            'description': part,
+                            'details': [{
+                                'type': 'migration',
+                                'title': '迁徙',
+                                'description': part
+                            }]
+                        })
+            if grandfather_name and len(normalized) < 3:
+                normalized.append({
+                    'date': '约1900-1950',
+                    'title': f"家族重要人物：{grandfather_name}",
+                    'description': f"家族记载中的人物：{grandfather_name}（推测年代）。",
+                    'details': [{
+                        'type': 'person',
+                        'title': grandfather_name,
+                        'description': f"记载中的人物 {grandfather_name}（推测）。",
+                        'person': grandfather_name
+                    }]
+                })
+
+        # 最终兜底，确保至少 3 个时间点（用合成的占位事件）
+        if len(normalized) < 3:
+            # 添加用户出生年份（如果有）
+            birth = user_input.get('birth_date')
+            if birth:
+                import re
+                m = re.search(r"(\d{4})", str(birth))
+                if m:
+                    y = m.group(1)
+                    key = f"{y}|用户出生"
+                    if key not in seen_keys and len(normalized) < 3:
+                        normalized.append({'date': y, 'title': '用户出生', 'description': f"用户出生于 {birth}", 'details': [{'type': 'birth', 'title': '出生', 'description': f'用户出生于 {birth}'}]})
+            # 生成一些通用的推测节点
+            while len(normalized) < 3:
+                idx = len(normalized) + 1
+                normalized.append({'date': f"约19{50+idx*5}", 'title': f'家族历史节点{idx}', 'description': '系统推测的历史节点（合成）', 'details': [{'type': 'generated', 'title': f'家族历史节点{idx}', 'description': '系统推测的历史节点（合成）'}]})
+
+        # 按年份排序
+        normalized.sort(key=lambda e: extract_year(e.get('date')))
+
+        timeline['events'] = normalized
+
+        return timeline
     
     async def generate_images_from_report(
         self,
@@ -471,12 +742,12 @@ class OutputService:
             logger.error(f"Error generating images from report: {e}")
             raise
     
-    async def build_timeline(self, session_id: str, family_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def build_timeline(self, session_id: str, family_filter: Optional[str] = None) -> Dict[str, Any]:
         """
-        构建时间轴
-        调用 graph_service
+        构建时间轴（对外方法，调用内部实现）
         """
-        return await self.graph_service.build_timeline(session_id, family_filter)
+        logger.info(f"OutputService.build_timeline called for session {session_id} with family_filter={family_filter}")
+        return await self._build_timeline(session_id, family_filter)
     
     async def generate_bio(self, session_id: str) -> str:
         """
