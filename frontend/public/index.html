@@ -1081,7 +1081,7 @@
             </div>
             
             <!-- 对话内容区域 -->
-            <div id="chat-container" class="overflow-y-auto px-6" style="height: calc(60vh - 40px);">
+            <div id="chat-container" class="overflow-y-auto px-6" style="height: calc(34vh - 40px); padding-bottom: 200px;">
                     <!-- AI欢迎消息 -->
                     <div class="mb-4 relative z-10">
                         <div class="flex gap-3">
@@ -1122,7 +1122,7 @@
                     </div>
                     <div class="flex items-center justify-center gap-8">
                         <!-- 话题选择按钮 -->
-                        <div class="relative" id="topic-menu-container" style="z-index: 40;">
+                        <div class="relative" id="topic-menu-container" style="z-index: 9999;">
                             <button onclick="toggleTopicMenu()" class="w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95"
                                     style="background: linear-gradient(135deg, #FF9800 0%, #FFC107 100%);
                                            box-shadow: 0 12px 32px rgba(255, 152, 0, 0.5);
@@ -1136,7 +1136,8 @@
                             </button>
                             
                             <!-- 话题选择菜单 -->
-                            <div id="topic-menu" class="absolute bottom-14 left-0 w-64 bg-white rounded-xl shadow-2xl border hidden overflow-hidden z-50" 
+                            <div id="topic-menu" class="absolute bottom-14 left-0 w-64 bg-white rounded-xl shadow-2xl border hidden overflow-hidden"
+                                 style="z-index: 10000;" 
                                  style="border-color: rgba(212, 175, 55, 0.2); transform-origin: bottom left;">
                                 
                                 <!-- 菜单标题 -->
@@ -1965,7 +1966,7 @@
                 console.log('表单验证通过，正在跳转到AI语音页面...');
                 switchPage('voice-page');
                 
-                // 更新语音页面中的姓名信息
+                // 更新语音页面中的姓名信息并立即显示初始问题
                 setTimeout(() => {
                     const memberNameElements = [
                         document.getElementById('member-name'),
@@ -1979,11 +1980,9 @@
                         }
                     });
                     
-                    // 显示初始问题
+                    // 立即显示初始问题，不延迟
                     if (initialQuestion) {
-                        setTimeout(() => {
-                            addAIMessage(initialQuestion);
-                        }, 500);
+                        addAIMessage(initialQuestion);
                     }
                     
                     console.log('AI语音页面初始化完成');
@@ -2272,10 +2271,19 @@ ${window.familyInfo ? JSON.stringify(window.familyInfo, null, 2) : '（信息较
                     }
                 }, 1000);
                 } else if (result.question) {
-                    // 显示下一个问题
-                    setTimeout(() => {
-                        addAIMessage(result.question);
-                    }, 500);
+                    // 移除"正在处理"的加载消息
+                    const chatContainer = document.getElementById('chat-container');
+                    const loadingMessages = chatContainer.querySelectorAll('.mb-4');
+                    if (loadingMessages.length > 0) {
+                        const lastMessage = loadingMessages[loadingMessages.length - 1];
+                        const messageText = lastMessage.querySelector('p');
+                        if (messageText && messageText.textContent.includes('正在处理您的回答')) {
+                            lastMessage.remove();
+                        }
+                    }
+                    
+                    // 立即显示下一个问题
+                    addAIMessage(result.question);
                 }
             } catch (error) {
                 console.error('提交答案失败:', error);
