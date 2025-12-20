@@ -6,11 +6,13 @@ import uuid
 from typing import Any, Dict, Optional, List, Tuple
 
 from openai import AsyncOpenAI
+from openai import AuthenticationError, APIError
 from motor.motor_asyncio import AsyncIOMotorClient
 import redis.asyncio as redis
 
 from app.utils.logger import logger
 from app.config import settings
+from app.utils.api_key_manager import APIKeyManager
 import json
 
 
@@ -134,18 +136,50 @@ class AIService:
         if self._llm_client is not None:
             return
 
-        key = self._get("DEEPSEEK_API_KEY", "deepseek_api_key", "OPENAI_API_KEY", "openai_api_key", default=None)
+        # 使用APIKeyManager统一获取密钥（支持运行时设置）
+        key = APIKeyManager.get_deepseek_key()
         if not key:
-            error_msg = "DEEPSEEK_API_KEY 未配置（或 OPENAI_API_KEY 未配置）。请在环境变量或.env文件中设置 DEEPSEEK_API_KEY。"
+            error_msg = "DEEPSEEK_API_KEY 未配置。请在环境变量或.env文件中设置 DEEPSEEK_API_KEY，或使用APIKeyManager.set_deepseek_key()在运行时设置。"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+
+        # 验证密钥格式
+        if not isinstance(key, str) or len(key.strip()) == 0:
+            error_msg = "DEEPSEEK_API_KEY 格式无效：密钥不能为空"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
+        # 检查密钥是否是占位符
+        if key.upper() in ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "YOUR_API_KEY", "YOUR_DEEPSEEK_API_KEY"]:
+            error_msg = f"DEEPSEEK_API_KEY 配置错误：检测到占位符值 '{key}'。请设置真实的API密钥。"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # 验证密钥格式（DeepSeek密钥通常以sk-开头）
+        key_stripped = key.strip()
+        if not key_stripped.startswith("sk-"):
+            logger.warning(f"API密钥格式可能不正确：DeepSeek API密钥通常以'sk-'开头，当前密钥以'{key_stripped[:3]}'开头")
+
+        # 记录密钥信息（部分掩码）
+        key_preview = self._mask_api_key(key_stripped)
+        # 检测密钥来源：如果settings中没有密钥或密钥不匹配，说明是运行时设置的
+        key_source = "配置文件"
+        if not settings.deepseek_api_key or settings.deepseek_api_key != key_stripped:
+            key_source = "运行时设置"
+        logger.info(f"使用 DeepSeek API密钥: {key_preview} (来源: {key_source})")
 
         base_url = self._get("DEEPSEEK_BASE_URL", "deepseek_base_url", default="https://api.deepseek.com")
         model = self._get("DEEPSEEK_MODEL", "deepseek_model", default="deepseek-chat")
 
-        self._llm_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self._llm_client = AsyncOpenAI(api_key=key_stripped, base_url=base_url)
         self._llm_model = model
         logger.info(f"使用 DeepSeek API: base_url={base_url}, model={model}, tone={self._tone()}")
+    
+    def _mask_api_key(self, key: str) -> str:
+        """掩码API密钥，只显示前8位和后4位"""
+        if not key or len(key) < 12:
+            return "***"
+        return f"{key[:8]}...{key[-4:]}"
 
     # --------------------------
     # Redis state helpers
@@ -550,6 +584,15 @@ class AIService:
                         if q and q not in out:
                             out.append(q)
                 return out[:n]
+        except AuthenticationError as e:
+            current_key = APIKeyManager.get_deepseek_key()
+            key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+            logger.error(f"生成候选问题失败 - 认证错误: API密钥无效")
+            logger.error(f"  使用的密钥: {key_preview}")
+            logger.error(f"  错误详情: {e}")
+            logger.error(f"  请检查: 1) API密钥是否正确 2) 密钥是否已过期 3) 密钥是否有足够余额")
+        except APIError as e:
+            logger.warning(f"生成候选问题失败 - API错误: {e}")
         except Exception as e:
             logger.warning(f"生成候选问题失败：{e}")
 
@@ -583,6 +626,17 @@ class AIService:
             )
             q = (response.choices[0].message.content or "").strip()
             return q or "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
+        except AuthenticationError as e:
+            current_key = APIKeyManager.get_deepseek_key()
+            key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+            logger.error(f"soft clarify 生成失败 - 认证错误: API密钥无效")
+            logger.error(f"  使用的密钥: {key_preview}")
+            logger.error(f"  错误详情: {e}")
+            logger.error(f"  请检查: 1) API密钥是否正确 2) 密钥是否已过期 3) 密钥是否有足够余额")
+            return "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
+        except APIError as e:
+            logger.warning(f"soft clarify 生成失败 - API错误: {e}")
+            return "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
         except Exception as e:
             logger.warning(f"soft clarify 生成失败：{e}")
             return "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
@@ -633,6 +687,17 @@ class AIService:
             if not isinstance(data, dict):
                 return {}
             return data
+        except AuthenticationError as e:
+            current_key = APIKeyManager.get_deepseek_key()
+            key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+            logger.error(f"抽取失败 - 认证错误: API密钥无效")
+            logger.error(f"  使用的密钥: {key_preview}")
+            logger.error(f"  错误详情: {e}")
+            logger.error(f"  请检查: 1) API密钥是否正确 2) 密钥是否已过期 3) 密钥是否有足够余额")
+            return {}
+        except APIError as e:
+            logger.error(f"抽取失败 - API错误: {e}")
+            return {}
         except Exception as e:
             logger.error(f"抽取失败：{e}")
             return {}
