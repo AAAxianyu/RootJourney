@@ -50,3 +50,18 @@ async def summarize_memories(request: SummarizeRequest):
         logger.error(f"Error summarizing memories: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
