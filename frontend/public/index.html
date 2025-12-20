@@ -1422,7 +1422,17 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    // 尝试获取后端返回的错误详情
+                    let errorDetail = `HTTP error! status: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.detail) {
+                            errorDetail = errorData.detail;
+                        }
+                    } catch (e) {
+                        // 如果响应不是JSON，使用默认错误信息
+                    }
+                    throw new Error(errorDetail);
                 }
                 
                 const result = await response.json();
@@ -1981,7 +1991,10 @@
                 
             } catch (error) {
                 console.error('提交表单失败:', error);
-                showError('创建会话失败，请重试');
+                // 显示详细的错误信息
+                const errorMessage = error.message || '创建会话失败，请重试';
+                showError(errorMessage);
+                hideLoading();
             }
         }
         

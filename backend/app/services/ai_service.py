@@ -136,7 +136,9 @@ class AIService:
 
         key = self._get("DEEPSEEK_API_KEY", "deepseek_api_key", "OPENAI_API_KEY", "openai_api_key", default=None)
         if not key:
-            raise RuntimeError("DEEPSEEK_API_KEY 未配置（或 OPENAI_API_KEY 未配置）")
+            error_msg = "DEEPSEEK_API_KEY 未配置（或 OPENAI_API_KEY 未配置）。请在环境变量或.env文件中设置 DEEPSEEK_API_KEY。"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
 
         base_url = self._get("DEEPSEEK_BASE_URL", "deepseek_base_url", default="https://api.deepseek.com")
         model = self._get("DEEPSEEK_MODEL", "deepseek_model", default="deepseek-chat")
@@ -290,7 +292,13 @@ class AIService:
             "question_count": 0,
         }
 
-        await self._save_state(session_id, state)
+        # 保存状态到Redis（必需）
+        try:
+            await self._save_state(session_id, state)
+        except Exception as e:
+            error_msg = f"无法连接到Redis服务器，请检查Redis服务是否运行。错误详情: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
 
         # 可选：Mongo 持久化 session 记录（失败也不影响）
         try:
