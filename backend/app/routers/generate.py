@@ -40,15 +40,25 @@ async def generate_report(request: ReportRequest):
     """
     生成家族报告
     返回包含文字和图片的完整报告
+    
+    报告生成后，会话会自动标记为可归档状态
     """
     try:
         report = await output_service.generate_report(request.session_id)
-        return {"report": report}
+        
+        # 报告生成成功，返回成功消息
+        return {
+            "report": report,
+            "message": "报告生成成功！您可以查看报告，或将其保存为档案。",
+            "can_archive": True
+        }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error generating report: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"生成报告时出错：{str(e)}")
 
 
 @router.post("/timeline")

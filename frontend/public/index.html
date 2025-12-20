@@ -1058,7 +1058,7 @@
         </main>
         
         <!-- AI语音对话页面 -->
-        <main id="voice-page" class="px-4 page-content relative" style="padding-bottom: 220px;">
+        <main id="voice-page" class="px-4 page-content relative" style="padding-bottom: 200px;">
             <!-- 顶部标题栏 -->
             <div class="flex items-center justify-start pt-6 pb-4">
                 <button onclick="showFormPageFromVoice()" class="flex items-center justify-center text-base px-3 py-2 rounded-full transition-all duration-300 hover:bg-opacity-10 hover:bg-[#2E4B2C]" style="color: #2E4B2C; font-family: 'Noto Sans SC', serif; width: 40px; height: 40px;">
@@ -1109,42 +1109,18 @@
                     </div>
                 </div>
 
-            <!-- 文本输入框区域 -->
-            <div class="absolute bottom-32 left-0 right-0 px-6 z-30">
-                <div class="flex items-center gap-2">
-                    <input type="text" 
-                           id="answer-input" 
-                           placeholder="输入您的回答..." 
-                           class="flex-1 px-4 py-3 rounded-xl border border-solid transition-all duration-300"
-                           style="background: rgba(255, 255, 255, 0.95);
-                                  border-color: rgba(46, 75, 44, 0.2);
-                                  color: #2E4B2C;
-                                  font-family: 'Noto Sans SC', sans-serif;
-                                  font-size: 1rem;
-                                  backdrop-filter: blur(10px);">
-                    <button onclick="submitTextAnswer()" 
-                            class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95"
-                            style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%);
-                                   color: white;
-                                   font-family: 'Noto Sans SC', sans-serif;
-                                   font-weight: 600;
-                                   box-shadow: 0 4px 12px rgba(46, 75, 44, 0.3);">
-                        发送
-                    </button>
-                </div>
-            </div>
-            
-            <!-- 录音和话题功能按钮区域 -->
-            <div class="absolute bottom-0 left-0 right-0 bg-white border-t border-solid py-4 px-6 z-40" 
+            <!-- 录音和话题功能按钮区域 - 放在最底部 -->
+            <div class="absolute bottom-0 left-0 right-0 bg-white border-t border-solid py-3 px-6 z-30" 
                  style="border-top-color: rgba(124, 179, 66, 0.1); 
                         background: rgba(255, 255, 255, 0.95);
-                        backdrop-filter: blur(10px);">
+                        backdrop-filter: blur(10px);
+                        min-height: 120px;">
                 <div class="flex flex-col items-center">
                     <div class="flex items-center gap-4 mb-2">
                         <span id="voice-status" class="text-xs text-gray-600">点击开始录音</span>
                         <span id="voice-time" class="text-xs font-mono text-gray-700 font-semibold">00:00</span>
                     </div>
-                    <div class="flex items-center justify-center gap-8 mt-2">
+                    <div class="flex items-center justify-center gap-8">
                         <!-- 话题选择按钮 -->
                         <div class="relative" id="topic-menu-container" style="z-index: 40;">
                             <button onclick="toggleTopicMenu()" class="w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95"
@@ -1291,7 +1267,102 @@
                             </svg>
                         </button>
                     </div>
-                </div>  
+                </div>
+            </div>
+            
+            <!-- 文本输入框区域 - 放在按钮上方，确保不被遮挡 -->
+            <div class="absolute left-0 right-0 px-6 z-50" 
+                 style="bottom: 130px;">
+                <div class="flex items-center gap-2">
+                    <input type="text" 
+                           id="answer-input" 
+                           placeholder="输入您的回答..." 
+                           class="flex-1 px-4 py-3 rounded-xl border border-solid transition-all duration-300"
+                           style="background: rgba(255, 255, 255, 0.98);
+                                  border-color: rgba(46, 75, 44, 0.3);
+                                  color: #2E4B2C;
+                                  font-family: 'Noto Sans SC', sans-serif;
+                                  font-size: 1rem;
+                                  backdrop-filter: blur(10px);
+                                  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
+                    <button onclick="submitTextAnswer()" 
+                            class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 flex-shrink-0"
+                            style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%);
+                                   color: white;
+                                   font-family: 'Noto Sans SC', sans-serif;
+                                   font-weight: 600;
+                                   box-shadow: 0 4px 12px rgba(46, 75, 44, 0.4);">
+                        发送
+                    </button>
+                </div>
+            </div>
+        </main>
+        
+        <!-- 报告展示页面 -->
+        <main id="report-page" class="px-4 page-content relative" style="padding-bottom: 100px;">
+            <!-- 返回按钮 -->
+            <div class="flex items-center justify-start pt-6 pb-4">
+                <button onclick="showHomePage()" class="flex items-center justify-center text-base px-3 py-2 rounded-full transition-all duration-300 hover:bg-opacity-10 hover:bg-[#2E4B2C]" style="color: #2E4B2C; font-family: 'Noto Sans SC', serif; width: 40px; height: 40px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- 页面标题 -->
+            <div class="text-center mb-6" style="margin-top: 0px;">
+                <div class="text-center">
+                    <h2 class="text-3xl font-bold" style="font-size: 32px; font-weight: 700; font-family: 'Noto Sans SC', serif; color: #2E4B2C; line-height: 1.4; letter-spacing: 0.08em; text-shadow: 2px 2px 4px rgba(46, 75, 44, 0.15);">
+                        家族寻根报告
+                    </h2>
+                </div>
+            </div>
+            
+            <!-- 报告内容区域 -->
+            <div id="report-container" class="overflow-y-auto px-4" style="height: calc(100vh - 200px); max-height: 600px;">
+                <!-- 加载提示 -->
+                <div id="report-loading" class="text-center py-8">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#2E4B2C]" style="border-color: #2E4B2C;"></div>
+                    <p class="mt-4" style="color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif;">正在生成报告，请耐心等待...</p>
+                </div>
+                
+                <!-- 报告内容 -->
+                <div id="report-content" class="hidden">
+                    <!-- 报告标题 -->
+                    <div class="mb-6 text-center">
+                        <h3 id="report-title" class="text-2xl font-bold mb-2" style="font-family: 'Noto Sans SC', serif; color: #2E4B2C;"></h3>
+                        <p id="report-summary" class="text-sm text-gray-600" style="font-family: 'Noto Sans SC', sans-serif;"></p>
+                    </div>
+                    
+                    <!-- 报告正文 -->
+                    <div id="report-text" class="prose prose-sm max-w-none" style="font-family: 'Noto Sans SC', sans-serif; color: #2E4B2C; line-height: 1.8;">
+                        <!-- 报告内容将在这里显示 -->
+                    </div>
+                </div>
+                
+                <!-- 错误提示 -->
+                <div id="report-error" class="hidden text-center py-8">
+                    <p class="text-red-500 mb-4" style="font-family: 'Noto Sans SC', sans-serif;">报告生成失败，请重试</p>
+                    <button onclick="retryGenerateReport()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95" style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%); color: white; font-family: 'Noto Sans SC', sans-serif; font-weight: 600;">
+                        重新生成
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 底部操作按钮 -->
+            <div class="absolute bottom-0 left-0 right-0 bg-white border-t border-solid py-4 px-6 z-40" 
+                 style="border-top-color: rgba(124, 179, 66, 0.1); 
+                        background: rgba(255, 255, 255, 0.95);
+                        backdrop-filter: blur(10px);">
+                <div class="flex items-center justify-center gap-4">
+                    <button onclick="saveReportAsArchive()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95" style="background: linear-gradient(135deg, #2E4B2C 0%, #3A5A3A 100%); color: white; font-family: 'Noto Sans SC', sans-serif; font-weight: 600; box-shadow: 0 4px 12px rgba(46, 75, 44, 0.3);">
+                        保存为档案
+                    </button>
+                    <button onclick="shareReport()" class="px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 active:scale-95 border-2" style="border-color: #2E4B2C; color: #2E4B2C; font-family: 'Noto Sans SC', sans-serif; font-weight: 600;">
+                        分享报告
+                    </button>
+                </div>
+            </div>
         </main>
         
         </div> <!-- 关闭页面容器 -->
@@ -1447,6 +1518,10 @@
          */
         async function generateReport(sessionId) {
             try {
+                // 设置更长的超时时间（5分钟）
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分钟
+                
                 const response = await fetch(`${API_BASE_URL}/generate/report`, {
                     method: 'POST',
                     headers: {
@@ -1454,6 +1529,46 @@
                     },
                     body: JSON.stringify({
                         session_id: sessionId
+                    }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
+                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                // 确保返回的数据结构正确
+                if (!result.report && result) {
+                    // 如果返回的就是报告数据本身
+                    return { report: result };
+                }
+                
+                return result;
+            } catch (error) {
+                console.error('生成报告失败:', error);
+                // 不直接抛出错误，让调用者处理
+                throw error;
+            }
+        }
+        
+        /**
+         * 保存档案
+         */
+        async function archiveSession(sessionId, title, notes = '') {
+            try {
+                const response = await fetch(`${API_BASE_URL}/session/${sessionId}/archive`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        title: title || `${window.familyInfo?.姓名 || '用户'}的家族寻根档案`,
+                        notes: notes
                     })
                 });
                 
@@ -1464,7 +1579,55 @@
                 const result = await response.json();
                 return result;
             } catch (error) {
-                console.error('生成报告失败:', error);
+                console.error('保存档案失败:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 获取档案列表
+         */
+        async function getArchives(archived = true) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/session/list?archived=${archived}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                return result.sessions || [];
+            } catch (error) {
+                console.error('获取档案列表失败:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 获取会话详情
+         */
+        async function getSession(sessionId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/session/${sessionId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                return result.session;
+            } catch (error) {
+                console.error('获取会话详情失败:', error);
                 throw error;
             }
         }
@@ -2014,28 +2177,87 @@
                     // 对话完成
                     addAIMessage('信息收集完成！正在为您搜索家族历史...');
                     
-                    // 自动触发搜索
-                    setTimeout(async () => {
-                        try {
-                            addAIMessage('搜索中，这可能需要几分钟，请耐心等待...');
-                            await searchFamily(window.appState.sessionId);
-                            addAIMessage('搜索完成！正在生成报告...');
-                            
+                // 自动触发搜索
+                setTimeout(async () => {
+                    try {
+                        addAIMessage('搜索中，这可能需要几分钟，请耐心等待...');
+                        await searchFamily(window.appState.sessionId);
+                        addAIMessage('搜索完成！正在生成报告...');
+                        
                             // 自动生成报告
                             setTimeout(async () => {
                                 try {
-                                    await generateReport(window.appState.sessionId);
-                                    addAIMessage('报告生成完成！您可以点击下一步查看结果。');
+                                    // 跳转到报告页面并显示加载状态
+                                    switchPage('report-page');
+                                    showReportLoading();
+                                    
+                                    const reportResult = await generateReport(window.appState.sessionId);
+                                    
+                                    // 确保报告数据存在
+                                    if (reportResult && reportResult.report) {
+                                        // 显示报告内容
+                                        displayReport(reportResult.report);
+                                        
+                                        // 自动保存档案
+                                        setTimeout(async () => {
+                                            try {
+                                                const archiveTitle = `${window.familyInfo?.姓名 || '用户'}的家族寻根档案`;
+                                                await archiveSession(window.appState.sessionId, archiveTitle, '自动保存的寻根档案');
+                                                showSuccess('档案已自动保存！');
+                                            } catch (error) {
+                                                console.error('保存档案失败:', error);
+                                                // 不显示错误，用户可以手动保存
+                                            }
+                                        }, 1000);
+                                    } else {
+                                        // 即使报告生成失败，也显示一个基本报告
+                                        logger.warning('Report result is empty, showing fallback report');
+                                        const fallbackReport = {
+                                            title: `${window.familyInfo?.姓名 || '用户'}家族历史报告`,
+                                            summary: '基于您提供的信息生成的家族历史报告',
+                                            report_text: `亲爱的${window.familyInfo?.姓名 || '用户'}：
+
+感谢您参与这次寻根之旅。虽然报告生成过程中遇到了一些技术问题，但我们已为您保存了所有收集到的信息。
+
+**您提供的信息：**
+${window.familyInfo ? JSON.stringify(window.familyInfo, null, 2) : '（信息较少，建议继续补充）'}
+
+**下一步建议：**
+1. 继续补充家族信息，特别是祖籍、祖父姓名等关键信息
+2. 查看搜索到的历史大家族信息
+3. 如有需要，可以重新生成报告
+
+感谢您的参与！`
+                                        };
+                                        displayReport(fallbackReport);
+                                    }
                                 } catch (error) {
                                     console.error('生成报告失败:', error);
-                                    addAIMessage('报告生成失败，但您可以继续使用其他功能。');
+                                    // 即使出错，也显示一个基本报告
+                                    const errorReport = {
+                                        title: `${window.familyInfo?.姓名 || '用户'}家族历史报告`,
+                                        summary: '报告生成遇到问题，但已保存您的信息',
+                                        report_text: `亲爱的${window.familyInfo?.姓名 || '用户'}：
+
+感谢您参与这次寻根之旅。报告生成过程中遇到了技术问题：${error.message || '未知错误'}。
+
+**您提供的信息已保存：**
+${window.familyInfo ? JSON.stringify(window.familyInfo, null, 2) : '（信息较少）'}
+
+**建议：**
+1. 请稍后重试生成报告
+2. 或联系技术支持获取帮助
+
+感谢您的参与！`
+                                    };
+                                    displayReport(errorReport);
                                 }
                             }, 1000);
-                        } catch (error) {
-                            console.error('搜索失败:', error);
-                            addAIMessage('搜索失败，但您可以继续使用其他功能。');
-                        }
-                    }, 1000);
+                    } catch (error) {
+                        console.error('搜索失败:', error);
+                        addAIMessage('搜索失败，但您可以继续使用其他功能。');
+                    }
+                }, 1000);
                 } else if (result.question) {
                     // 显示下一个问题
                     setTimeout(() => {
@@ -2061,29 +2283,58 @@
             
             try {
                 // 如果还没有搜索，先搜索
-                addAIMessage('正在搜索家族历史，这可能需要几分钟...');
+                addAIMessage('正在搜索家族历史，这可能需要几分钟，请耐心等待...');
                 await searchFamily(window.appState.sessionId);
                 
                 // 生成报告
                 addAIMessage('搜索完成，正在生成报告...');
                 const reportResult = await generateReport(window.appState.sessionId);
                 
+                // 跳转到报告页面
+                switchPage('report-page');
+                showReportLoading();
+                
                 if (reportResult && reportResult.report) {
-                    addAIMessage('报告生成完成！正在跳转到结果页面...');
+                    // 显示报告内容
+                    displayReport(reportResult.report);
                     
-                    // 跳转到结果页面（如果有的话）
-                    setTimeout(() => {
-                        // 这里可以跳转到结果展示页面
-                        // switchPage('result-page');
-                        addAIMessage('您的家族历史报告已生成完成！');
+                    // 自动保存档案
+                    setTimeout(async () => {
+                        try {
+                            const archiveTitle = `${window.familyInfo?.姓名 || '用户'}的家族寻根档案`;
+                            await archiveSession(window.appState.sessionId, archiveTitle, '自动保存的寻根档案');
+                            showSuccess('档案已自动保存！');
+                        } catch (error) {
+                            console.error('保存档案失败:', error);
+                            // 不显示错误，用户可以手动保存
+                        }
                     }, 1000);
                 } else {
-                    addAIMessage('报告生成失败，请重试。');
+                    // 即使报告生成失败，也显示一个基本报告
+                    const fallbackReport = {
+                        title: `${window.familyInfo?.姓名 || '用户'}家族历史报告`,
+                        summary: '基于您提供的信息生成的家族历史报告',
+                        report_text: `亲爱的${window.familyInfo?.姓名 || '用户'}：
+
+感谢您参与这次寻根之旅。虽然报告生成过程中遇到了一些技术问题，但我们已为您保存了所有收集到的信息。
+
+**您提供的信息：**
+${window.familyInfo ? JSON.stringify(window.familyInfo, null, 2) : '（信息较少，建议继续补充）'}
+
+**下一步建议：**
+1. 继续补充家族信息，特别是祖籍、祖父姓名等关键信息
+2. 查看搜索到的历史大家族信息
+3. 如有需要，可以重新生成报告
+
+感谢您的参与！`
+                    };
+                    displayReport(fallbackReport);
                 }
             } catch (error) {
                 console.error('进入下一步失败:', error);
-                showError('操作失败，请重试');
-                addAIMessage('操作失败，请检查网络连接后重试。');
+                const errorMsg = error.message || '操作失败，请重试';
+                showError(errorMsg);
+                addAIMessage(`操作失败：${errorMsg}。请检查网络连接后重试。`);
             }
         }
         
@@ -2242,6 +2493,159 @@
             setTimeout(() => {
                 addAIMessage(aiResponse);
             }, 500);
+        }
+        
+        // ==================== 报告页面功能 ====================
+        
+        /**
+         * 加载报告到页面（兼容旧代码）
+         */
+        function loadReportToPage(report) {
+            displayReport(report);
+        }
+        
+        /**
+         * 显示报告加载状态
+         */
+        function showReportLoading() {
+            const loading = document.getElementById('report-loading');
+            const content = document.getElementById('report-content');
+            const error = document.getElementById('report-error');
+            
+            if (loading) loading.classList.remove('hidden');
+            if (content) content.classList.add('hidden');
+            if (error) error.classList.add('hidden');
+        }
+        
+        /**
+         * 显示报告内容
+         */
+        function displayReport(report) {
+            const loading = document.getElementById('report-loading');
+            const content = document.getElementById('report-content');
+            const error = document.getElementById('report-error');
+            const title = document.getElementById('report-title');
+            const summary = document.getElementById('report-summary');
+            const text = document.getElementById('report-text');
+            
+            if (loading) loading.classList.add('hidden');
+            if (error) error.classList.add('hidden');
+            if (content) content.classList.remove('hidden');
+            
+            if (title && report.title) {
+                title.textContent = report.title;
+            } else if (title) {
+                title.textContent = '家族寻根报告';
+            }
+            
+            if (summary && report.summary) {
+                summary.textContent = report.summary;
+            } else if (summary) {
+                summary.textContent = '基于您提供的信息生成的家族历史报告';
+            }
+            
+            if (text && report.report_text) {
+                // 将报告文本转换为HTML，保持格式
+                let reportHtml = report.report_text
+                    .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #2E4B2C; font-weight: 600;">$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/#{3}\s+(.*?)$/gm, '<h3 style="font-size: 1.2em; font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; color: #2E4B2C;">$1</h3>')
+                    .replace(/#{2}\s+(.*?)$/gm, '<h2 style="font-size: 1.5em; font-weight: 700; margin-top: 2em; margin-bottom: 1em; color: #2E4B2C;">$1</h2>')
+                    .replace(/#{1}\s+(.*?)$/gm, '<h1 style="font-size: 1.8em; font-weight: 700; margin-top: 2em; margin-bottom: 1em; color: #2E4B2C;">$1</h1>')
+                    .replace(/\n\n+/g, '</p><p style="margin-bottom: 1em; color: #2E4B2C; line-height: 1.8;">')
+                    .replace(/\n/g, '<br>');
+                
+                text.innerHTML = `<p style="margin-bottom: 1em; color: #2E4B2C; line-height: 1.8;">${reportHtml}</p>`;
+            } else if (text) {
+                text.innerHTML = '<p style="color: #2E4B2C; line-height: 1.8;">报告内容加载中...</p>';
+            }
+        }
+        
+        /**
+         * 显示报告错误
+         */
+        function showReportError(message) {
+            const loading = document.getElementById('report-loading');
+            const content = document.getElementById('report-content');
+            const error = document.getElementById('report-error');
+            
+            if (loading) loading.classList.add('hidden');
+            if (content) content.classList.add('hidden');
+            if (error) {
+                error.classList.remove('hidden');
+                const errorMsg = error.querySelector('p');
+                if (errorMsg) errorMsg.textContent = message;
+            }
+        }
+        
+        /**
+         * 重新生成报告
+         */
+        async function retryGenerateReport() {
+            if (!window.appState.sessionId) {
+                showError('会话未创建');
+                return;
+            }
+            
+            showReportLoading();
+            
+            try {
+                const reportResult = await generateReport(window.appState.sessionId);
+                if (reportResult && reportResult.report) {
+                    displayReport(reportResult.report);
+                } else {
+                    showReportError('报告生成失败，请重试');
+                }
+            } catch (error) {
+                console.error('重新生成报告失败:', error);
+                showReportError(`报告生成失败：${error.message || '未知错误'}`);
+            }
+        }
+        
+        /**
+         * 保存报告为档案
+         */
+        async function saveReportAsArchive() {
+            if (!window.appState.sessionId) {
+                showError('会话未创建');
+                return;
+            }
+            
+            const title = prompt('请输入档案名称：', `${window.familyInfo?.姓名 || '用户'}的家族寻根档案`);
+            if (!title) return;
+            
+            const notes = prompt('请输入备注（可选）：', '');
+            
+            try {
+                await archiveSession(window.appState.sessionId, title, notes || '');
+                showSuccess('档案保存成功！');
+            } catch (error) {
+                console.error('保存档案失败:', error);
+                showError('保存档案失败，请重试');
+            }
+        }
+        
+        /**
+         * 分享报告
+         */
+        function shareReport() {
+            if (navigator.share) {
+                const reportText = document.getElementById('report-text')?.textContent || '';
+                navigator.share({
+                    title: document.getElementById('report-title')?.textContent || '家族寻根报告',
+                    text: reportText.substring(0, 200) + '...',
+                    url: window.location.href
+                }).catch(err => console.log('分享失败:', err));
+            } else {
+                // 复制到剪贴板
+                const reportText = document.getElementById('report-text')?.textContent || '';
+                navigator.clipboard.writeText(reportText).then(() => {
+                    showSuccess('报告内容已复制到剪贴板');
+                }).catch(err => {
+                    console.error('复制失败:', err);
+                    showError('复制失败，请手动复制');
+                });
+            }
         }
         
         // 交错动画初始化系统

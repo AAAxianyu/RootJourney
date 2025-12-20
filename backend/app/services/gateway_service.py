@@ -45,7 +45,7 @@ class GatewayService:
         
         return self.deepseek_client, settings.deepseek_model
     
-    async def llm_chat(self, messages: List[Dict[str, str]], model: Optional[str] = None, temperature: float = 0.7, enable_web_search: bool = False, timeout: float = 180.0) -> str:
+    async def llm_chat(self, messages: List[Dict[str, str]], model: Optional[str] = None, temperature: float = 0.7, enable_web_search: bool = False, timeout: float = 240.0) -> str:
         """
         DeepSeek LLM 问答
         messages: 消息列表，格式 [{"role": "user", "content": "..."}]

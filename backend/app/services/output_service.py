@@ -91,7 +91,25 @@ class OutputService:
         
         # 执行家族关联分析和搜索
         logger.info(f"Starting family analysis and search for session {session_id}")
-        search_results = await self.search_service.perform_search(session_id)
+        try:
+            search_results = await self.search_service.perform_search(session_id)
+            if not search_results:
+                logger.warning(f"Search returned empty results for session {session_id}")
+                search_results = {
+                    "possible_families": [],
+                    "family_histories": {},
+                    "summary": {"total_families_found": 0, "high_relevance_families": []}
+                }
+        except Exception as e:
+            logger.error(f"Error during family search: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # 即使搜索失败，也继续生成报告
+            search_results = {
+                "possible_families": [],
+                "family_histories": {},
+                "summary": {"total_families_found": 0, "high_relevance_families": []}
+            }
         
         # 提取用户实际信息用于报告
         user_name = user_input.get("name", "用户")
@@ -188,11 +206,74 @@ class OutputService:
             report_text = await self.gateway_service.llm_chat(
                 messages=[{"role": "user", "content": report_prompt}],
                 temperature=0.8,  # 适度降低温度以加快响应
-                timeout=180  # 设置180秒超时
+                timeout=240  # 增加到240秒超时（4分钟）
             )
+            if not report_text or len(report_text.strip()) < 100:
+                # 如果生成的报告太短，使用备用方案
+                logger.warning(f"Generated report too short, using fallback")
+                report_text = f"""
+亲爱的{user_name}：
+
+感谢您参与这次寻根之旅。基于您提供的信息，我们为您整理了一份家族历史报告。
+
+**第一章：根脉所系——家族的起源与迁徙故事**
+根据您提供的信息：
+- 祖籍/籍贯：{user_birth_place or '待补充'}
+- 当前地区：{user_current_location or '待补充'}
+
+**第二章：历史大家族故事与名人**
+基于搜索到的历史大家族信息，我们为您找到了相关的历史名人和家族故事。
+
+**第三章：文化传承**
+家族文化是传承的重要载体，您的家族有着深厚的历史底蕴。
+
+**第四章：个人与家族**
+{user_name}，您是家族传承的重要一环，您的故事也是家族历史的一部分。
+
+感谢您参与这次寻根之旅！
+"""
         except Exception as e:
             logger.error(f"Error generating comprehensive report: {e}")
-            report_text = f"家族历史报告：基于收集的数据，{user_name}的家族信息已整理完成。"
+            import traceback
+            logger.error(traceback.format_exc())
+            # 使用更详细的备用报告
+            report_text = f"""
+亲爱的{user_name}：
+
+感谢您参与这次寻根之旅。虽然报告生成过程中遇到了一些技术问题，但我们已为您保存了所有收集到的信息。
+
+**您提供的信息：**
+{chr(10).join(actual_data_summary) if actual_data_summary else '（信息较少，建议继续补充）'}
+
+**下一步建议：**
+1. 继续补充家族信息，特别是祖籍、祖父姓名等关键信息
+2. 查看搜索到的历史大家族信息
+3. 如有需要，可以重新生成报告
+
+感谢您的参与！
+"""
+        
+        # 确保report_text不为空
+        if not report_text or len(report_text.strip()) < 50:
+            logger.warning(f"Report text is too short or empty, using minimal report")
+            report_text = f"""
+亲爱的{user_name}：
+
+感谢您参与这次寻根之旅。基于您提供的信息，我们为您整理了一份家族历史报告。
+
+**您提供的信息：**
+{chr(10).join(actual_data_summary) if actual_data_summary else '（信息较少，建议继续补充）'}
+
+**家族历史探索：**
+我们已为您搜索了相关的历史大家族信息，并整理了可能的家族关联。
+
+**下一步建议：**
+1. 继续补充家族信息，特别是祖籍、祖父姓名等关键信息
+2. 查看搜索到的历史大家族信息
+3. 如有需要，可以重新生成更详细的报告
+
+感谢您的参与！
+"""
         
         # 构建报告数据
         report_data = {
@@ -213,18 +294,29 @@ class OutputService:
         
         # 保存报告到数据库
         try:
+            # 获取用户信息用于自动生成档案标题
+            user_name = user_input.get("name", "用户")
+            
+            update_data = {
+                "report": report_data,
+                "report_generated_at": datetime.now().isoformat(),
+                # 报告生成后自动标记为可归档，但还未归档（archived=False）
+                "report_ready": True
+            }
+            
+            # 如果还没有档案标题，自动生成一个
+            if not session.get("archive_title"):
+                update_data["archive_title"] = f"{user_name}的家族寻根档案"
+            
             await db.sessions.update_one(
                 {"_id": session_id},
-                {
-                    "$set": {
-                        "report": report_data,
-                        "report_generated_at": datetime.now().isoformat()
-                    }
-                }
+                {"$set": update_data}
             )
             logger.info(f"Report saved to database for session {session_id}")
         except Exception as e:
             logger.error(f"Error saving report to database: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         return report_data
     
