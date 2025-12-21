@@ -5,16 +5,87 @@
   box-sizing: border-box;
 }
 
+html {
+  /* 防止iOS Safari的弹性滚动 */
+  -webkit-overflow-scrolling: touch;
+  /* 优化移动端字体渲染 */
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* 移动端优化 */
+  -webkit-tap-highlight-color: transparent;
+  /* 防止文本选择（移动端长按选择） */
+  -webkit-user-select: none;
+  user-select: none;
+  /* 允许输入框文本选择 */
+}
+
+/* 允许输入框和文本区域的文本选择 */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 触摸反馈优化 */
+button,
+a,
+input[type="submit"],
+input[type="button"] {
+  /* 移除移动端点击高亮 */
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+  /* 触摸反馈 */
+  touch-action: manipulation;
+}
+
+/* 移动端按钮点击效果 */
+@media (max-width: 768px) {
+  button:active,
+  a:active,
+  input[type="submit"]:active,
+  input[type="button"]:active {
+    opacity: 0.8;
+    transform: scale(0.98);
+    transition: opacity 0.1s, transform 0.1s;
+  }
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* 移动端滚动优化 */
+@media (max-width: 768px) {
+  /* 平滑滚动 */
+  * {
+    scroll-behavior: smooth;
+  }
+
+  /* 优化滚动条 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
 }
 

@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <!-- 设计尺寸：375×812px (iPhone 13) -->
     <!-- 产品类型：移动端App -->
     
@@ -1902,6 +1905,10 @@
             memoriesLoaded: false
         };
         
+        // 表单提交节流控制：记录上次提交时间
+        window.lastSubmitTime = 0;
+        const SUBMIT_THROTTLE_INTERVAL = 10000; // 10秒（毫秒）
+        
         // ==================== API调用函数 ====================
         
         /**
@@ -2388,6 +2395,20 @@
         // 表单提交函数 - 已连接后端API
         async function submitForm() {
             console.log('submitForm函数被调用');
+            
+            // 节流控制：检查是否在10秒内重复提交
+            const currentTime = Date.now();
+            const timeSinceLastSubmit = currentTime - window.lastSubmitTime;
+            
+            if (timeSinceLastSubmit < SUBMIT_THROTTLE_INTERVAL) {
+                const remainingSeconds = Math.ceil((SUBMIT_THROTTLE_INTERVAL - timeSinceLastSubmit) / 1000);
+                console.log(`提交过于频繁，请等待 ${remainingSeconds} 秒后再试`);
+                showError(`提交过于频繁，请等待 ${remainingSeconds} 秒后再试`);
+                return;
+            }
+            
+            // 更新上次提交时间
+            window.lastSubmitTime = currentTime;
             
             // 检查输入框是否存在
             const nameInput = document.getElementById('name-input');

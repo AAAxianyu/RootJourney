@@ -62,9 +62,402 @@
   font-size: 1rem;
   cursor: pointer;
   transition: background-color 0.3s;
+  min-height: 44px; /* 触摸目标最小高度 */
 }
 
 .submit-button:hover, .generate-button:hover {
   background-color: #2980b9;
+}
+
+/* 聊天界面样式 */
+.chat-interface {
+  display: flex;
+  flex-direction: column;
+  height: 600px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.message {
+  margin-bottom: 1rem;
+  display: flex;
+}
+
+.message.user {
+  justify-content: flex-end;
+}
+
+.message.assistant {
+  justify-content: flex-start;
+}
+
+.message-content {
+  max-width: 70%;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  word-wrap: break-word;
+}
+
+.message.user .message-content {
+  background-color: #3498db;
+  color: white;
+}
+
+.message.assistant .message-content {
+  background-color: #ecf0f1;
+  color: #2c3e50;
+}
+
+.chat-input-form {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ddd;
+}
+
+.chat-input-form input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  min-height: 44px;
+}
+
+.chat-input-form button {
+  background-color: #3498db;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.chat-input-form button:hover:not(:disabled) {
+  background-color: #2980b9;
+}
+
+.chat-input-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 家族报告样式 */
+.family-report {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.report-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.report-header h1 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+}
+
+.report-summary {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: #555;
+  margin-bottom: 0.5rem;
+}
+
+.report-date {
+  font-size: 0.9rem;
+  color: #7f8c8d;
+}
+
+.biographies-section,
+.family-tree-section {
+  margin-top: 2rem;
+}
+
+.biographies-section h2,
+.family-tree-section h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+}
+
+.biography {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #3498db;
+}
+
+.biography-header h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+}
+
+.biography-content {
+  line-height: 1.6;
+}
+
+.biography-text {
+  margin-bottom: 1.5rem;
+}
+
+.biography-text p {
+  margin-bottom: 1rem;
+  color: #555;
+}
+
+.biography-timeline {
+  margin-top: 1.5rem;
+}
+
+.biography-timeline h3 {
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+}
+
+.timeline-container {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.timeline-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #7f8c8d;
+}
+
+.family-tree-container {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  min-height: 200px;
+}
+
+.loading {
+  text-align: center;
+  padding: 2rem;
+  font-size: 1.1rem;
+  color: #7f8c8d;
+}
+
+/* Home页面section样式 */
+.input-section,
+.chat-section,
+.report-section {
+  width: 100%;
+}
+
+.input-section h2,
+.chat-section h2 {
+  font-size: 1.75rem;
+  margin-bottom: 1.5rem;
+  color: #2c3e50;
+  text-align: center;
+}
+
+.chat-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.chat-section .generate-button {
+  margin-top: 1rem;
+}
+
+/* 响应式设计 - 移动端 */
+@media (max-width: 768px) {
+  .app-header {
+    padding: 1.5rem 1rem;
+  }
+
+  .app-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .app-header p {
+    font-size: 0.9rem;
+  }
+
+  .app-main {
+    max-width: 100%;
+    padding: 1rem;
+  }
+
+  .input-form, .chat-interface {
+    padding: 1rem;
+    border-radius: 8px;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  .form-group label {
+    font-size: 0.95rem;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    padding: 0.875rem;
+    font-size: 16px; /* 防止iOS自动缩放 */
+    min-height: 44px;
+  }
+
+  .submit-button, .generate-button {
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+    font-size: 1rem;
+    min-height: 44px;
+  }
+
+  /* 聊天界面移动端优化 */
+  .chat-interface {
+    height: calc(100vh - 200px);
+    min-height: 400px;
+  }
+
+  .chat-messages {
+    padding: 0.75rem;
+  }
+
+  .message-content {
+    max-width: 85%;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.95rem;
+  }
+
+  .chat-input-form {
+    padding-top: 0.75rem;
+    flex-wrap: nowrap;
+  }
+
+  .chat-input-form input {
+    padding: 0.875rem;
+    font-size: 16px; /* 防止iOS自动缩放 */
+    min-height: 44px;
+  }
+
+  .chat-input-form button {
+    padding: 0.875rem 1rem;
+    font-size: 0.95rem;
+    min-height: 44px;
+  }
+
+  /* 报告移动端优化 */
+  .family-report {
+    padding: 1rem;
+  }
+
+  .report-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .report-header h1 {
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .report-summary {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .report-date {
+    font-size: 0.85rem;
+  }
+
+  .biographies-section,
+  .family-tree-section {
+    margin-top: 1.5rem;
+  }
+
+  .biographies-section h2,
+  .family-tree-section h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .biography {
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .biography-header h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .biography-text p {
+    font-size: 0.95rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .biography-timeline h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .timeline-container {
+    margin-top: 0.75rem;
+  }
+
+  .timeline-container div {
+    height: 300px !important; /* 移动端减小图表高度 */
+  }
+
+  .family-tree-container {
+    padding: 0.75rem;
+    min-height: 150px;
+  }
+
+  /* Home页面section移动端优化 */
+  .input-section h2,
+  .chat-section h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .chat-section {
+    gap: 1rem;
+  }
+
+  .chat-section .generate-button {
+    margin-top: 0.75rem;
+  }
+}
+
+/* 响应式设计 - 平板 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .app-main {
+    max-width: 100%;
+    padding: 1.5rem;
+  }
+
+  .chat-interface {
+    height: 550px;
+  }
+
+  .message-content {
+    max-width: 75%;
+  }
 }
 
