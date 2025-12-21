@@ -1,27 +1,835 @@
 """
 AI问答和NLP逻辑服务
+处理AI问答循环，逐步丰富用户家族信息
 """
-from typing import List, Dict, Any
+import uuid
+from typing import Any, Dict, Optional, List, Tuple
+
+from openai import AsyncOpenAI
+from openai import AuthenticationError, APIError
+from motor.motor_asyncio import AsyncIOMotorClient
+import redis.asyncio as redis
+
+from app.utils.logger import logger
+from app.config import settings
+from app.utils.api_key_manager import APIKeyManager
+from app.services.gateway_service import GatewayService
+import json
+
 
 class AIService:
-    """AI 服务类"""
-    
-    def __init__(self):
-        # TODO: 初始化 AI 客户端
-        pass
-    
-    async def chat(self, messages: List[Dict[str, str]], context: Dict[str, Any] = None) -> str:
-        """AI 聊天"""
-        # TODO: 实现 AI 聊天逻辑
-        raise NotImplementedError
-    
-    async def extract_entities(self, text: str) -> Dict[str, Any]:
-        """实体提取"""
-        # TODO: 实现实体提取逻辑
-        raise NotImplementedError
-    
-    async def generate_text(self, prompt: str, max_tokens: int = 1000) -> str:
-        """文本生成"""
-        # TODO: 实现文本生成逻辑
-        raise NotImplementedError
+    """
+    RootJourney AI Service (Option A)
+    - 系统控制“阶段/主题”，保证逻辑不乱跳
+    - AI 负责把问题问得更自然、更温暖、更叙事
+    - 抽取失败不“纠错审问”，而是“换角度陪聊”
+    - “不知道/不清楚/没有”视为有效回答：记录并继续
+    """
 
+    # 你可以在这里扩展整个“叙事采集流程”
+    # 每一步包含：step_id, topic(给AI的主题), fallback(兜底问法), field_path(希望抽取到的字段，可选)
+    FLOW: List[Tuple[str, str, str, Optional[str]]] = [
+        (
+            "self_origin",
+            "用户自己的祖籍/籍贯与家乡印象（允许模糊）",
+            "我们先从你的“根”开始聊起：你印象里自己（或家里人常说的）祖籍/籍贯大概在什么地方？不确定也没关系，说个省市也可以。",
+            "self.origin",
+        ),
+        (
+            "family_story_seed",
+            "与家族有关的一段记忆或线索（比如谁常提起老家、家里口口相传的故事）",
+            "如果你愿意的话：你小时候有没有听家里人提起过“老家/祖上”的一两句话？哪怕很零碎也行。",
+            None,
+        ),
+        (
+            "father_origin",
+            "父亲的老家/籍贯/成长地（允许模糊）",
+            "你爸爸常提起过他的老家吗？你印象里大概在哪个省市？",
+            "father.origin",
+        ),
+        (
+            "grandfather_origin",
+            "爷爷的老家/籍贯/家族支系线索（允许模糊）",
+            "那你对爷爷那边的“老家”有没有任何印象？不确定也没关系，说个大概方向也行。",
+            "grandfather.origin",
+        ),
+        (
+            "generation_name",
+            "家族辈分字/辈分名（如果有的话）",
+            "你们家族有没有“辈分字”（比如名字里某个字按辈分排列）？如果没有或不确定也没关系。",
+            "self.generation_name",
+        ),
+        (
+            "surname_clue",
+            "姓氏与宗族线索（支系、堂号、祠堂/家谱是否见过）",
+            "你家族的姓氏是？你有没有见过家谱、祠堂、或者听过“堂号/宗祠”之类的说法？",
+            "self.surname",
+        ),
+    ]
+
+    def __init__(self):
+        self._mongo_client: Optional[AsyncIOMotorClient] = None
+        self._redis: Optional[redis.Redis] = None
+
+        self._llm_client: Optional[AsyncOpenAI] = None
+        self._llm_model: str = "deepseek-chat"
+        self.gateway_service = GatewayService()
+
+    # --------------------------
+    # settings helper
+    # --------------------------
+    def _get(self, *names: str, default: Any = None) -> Any:
+        for n in names:
+            if hasattr(settings, n):
+                v = getattr(settings, n)
+                if v is not None and v != "":
+                    return v
+        return default
+
+    def _tone(self) -> str:
+        t = str(self._get("TONE", "tone", default="neutral")).strip().lower()
+        return "warm" if t == "warm" else "neutral"
+
+    def _narrative_style_block(self) -> str:
+        if self._tone() == "warm":
+            return """
+你是一位“家族记忆引导者”，不是信息采集器。
+你在做的是“陪伴式寻根与家族叙事”，而不是查户口填表。
+
+风格要求：
+- 温和、尊重、带一点陪伴感
+- 接受信息不完整、模糊或“不知道”
+- 鼓励叙述（“你印象里…/你听谁提过…/大概也行”）
+- 不要使用“请提供/请填写/必须回答”等表单语气
+- 不要责备、不要审问、不要让用户觉得答错了
+"""
+        return """
+你是家族寻根信息采集助手，语气自然友好，避免表单腔。
+允许用户不确定或跳过。
+"""
+
+    # --------------------------
+    # DB clients
+    # --------------------------
+    async def _get_redis(self) -> redis.Redis:
+        if self._redis is not None:
+            return self._redis
+        redis_url = self._get("REDIS_URL", "redis_url", default="redis://localhost:6379/0")
+        self._redis = redis.from_url(redis_url, decode_responses=True)
+        return self._redis
+
+    async def _get_mongo_db(self):
+        if self._mongo_client is None:
+            mongo_uri = self._get(
+                "MONGO_URI",
+                "mongo_uri",
+                "MONGODB_URL",
+                "mongodb_url",
+                default="mongodb://localhost:27017",
+            )
+            self._mongo_client = AsyncIOMotorClient(mongo_uri)
+        db_name = self._get("MONGODB_DB_NAME", "mongodb_db_name", default="rootjourney")
+        return self._mongo_client[db_name]
+
+    # --------------------------
+    # LLM client (DeepSeek via OpenAI SDK)
+    # --------------------------
+    def _ensure_llm(self) -> None:
+        if self._llm_client is not None:
+            return
+
+        # 使用APIKeyManager统一获取密钥（支持运行时设置）
+        key = APIKeyManager.get_deepseek_key()
+        if not key:
+            error_msg = "DEEPSEEK_API_KEY 未配置。请在环境变量或.env文件中设置 DEEPSEEK_API_KEY，或使用APIKeyManager.set_deepseek_key()在运行时设置。"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # 验证密钥格式
+        if not isinstance(key, str) or len(key.strip()) == 0:
+            error_msg = "DEEPSEEK_API_KEY 格式无效：密钥不能为空"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
+        # 检查密钥是否是占位符
+        if key.upper() in ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "YOUR_API_KEY", "YOUR_DEEPSEEK_API_KEY"]:
+            error_msg = f"DEEPSEEK_API_KEY 配置错误：检测到占位符值 '{key}'。请设置真实的API密钥。"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # 验证密钥格式（DeepSeek密钥通常以sk-开头）
+        key_stripped = key.strip()
+        if not key_stripped.startswith("sk-"):
+            logger.warning(f"API密钥格式可能不正确：DeepSeek API密钥通常以'sk-'开头，当前密钥以'{key_stripped[:3]}'开头")
+
+        # 记录密钥信息（部分掩码）
+        key_preview = self._mask_api_key(key_stripped)
+        # 检测密钥来源：如果settings中没有密钥或密钥不匹配，说明是运行时设置的
+        key_source = "配置文件"
+        if not settings.deepseek_api_key or settings.deepseek_api_key != key_stripped:
+            key_source = "运行时设置"
+        logger.info(f"使用 DeepSeek API密钥: {key_preview} (来源: {key_source})")
+
+        base_url = self._get("DEEPSEEK_BASE_URL", "deepseek_base_url", default="https://api.deepseek.com")
+        model = self._get("DEEPSEEK_MODEL", "deepseek_model", default="deepseek-chat")
+
+        self._llm_client = AsyncOpenAI(api_key=key_stripped, base_url=base_url)
+        self._llm_model = model
+        logger.info(f"使用 DeepSeek API: base_url={base_url}, model={model}, tone={self._tone()}")
+    
+    def _mask_api_key(self, key: str) -> str:
+        """掩码API密钥，只显示前8位和后4位"""
+        if not key or len(key) < 12:
+            return "***"
+        return f"{key[:8]}...{key[-4:]}"
+
+    # --------------------------
+    # Redis state helpers
+    # --------------------------
+    def _rk(self, session_id: str) -> str:
+        return f"session:{session_id}"
+
+    async def _load_state(self, session_id: str) -> Dict[str, Any]:
+        r = await self._get_redis()
+        raw = await r.get(self._rk(session_id))
+        if not raw:
+            raise ValueError(f"Session {session_id} not found（请先调用 /user/input 创建 session）")
+        return json.loads(raw)
+
+    async def _save_state(self, session_id: str, state: Dict[str, Any]) -> None:
+        r = await self._get_redis()
+        ttl = int(self._get("SESSION_EXPIRE_SECONDS", "session_expire_seconds", default=3600))
+        await r.set(self._rk(session_id), json.dumps(state, ensure_ascii=False), ex=ttl)
+
+    # --------------------------
+    # Utilities
+    # --------------------------
+    def _is_end_request(self, answer: str) -> bool:
+        """检查用户是否想要结束对话"""
+        if not answer:
+            return False
+        answer_lower = answer.strip().lower()
+        end_keywords = [
+            "结束", "完成", "好了", "够了", "可以了", 
+            "结束对话", "完成对话", "不再继续", "不想继续",
+            "停止", "退出", "不聊了", "结束吧", "完成吧"
+        ]
+        return any(keyword in answer_lower for keyword in end_keywords)
+    
+    def _is_skip(self, answer: str) -> bool:
+        a = (answer or "").strip()
+        if a == "":
+            return True
+        skip_words = ["不知道", "不清楚", "不确定", "忘了", "没有", "暂无", "不记得", "不了解", "说不准", "不太清楚"]
+        return any(w in a for w in skip_words)
+
+    def _deep_merge(self, base: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(base, dict):
+            base = {}
+        if not isinstance(new, dict):
+            return base
+
+        out = dict(base)
+        for k, v in new.items():
+            if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+                out[k] = self._deep_merge(out[k], v)
+            else:
+                out[k] = v
+        return out
+
+    def _get_by_path(self, obj: Dict[str, Any], path: str) -> Any:
+        cur: Any = obj
+        for part in path.split("."):
+            if not isinstance(cur, dict):
+                return None
+            if part not in cur:
+                return None
+            cur = cur[part]
+        return cur
+
+    def _pick_best_question(self, candidates: list[str], fallback: str, asked_before: list[str]) -> str:
+        for q in candidates:
+            q = (q or "").strip()
+            if q and q not in asked_before:
+                return q
+        # 兜底也要避免完全重复：如果兜底问法也问过，就稍微变体一下
+        if fallback in asked_before:
+            return fallback + "（大概的省份/城市也可以）"
+        return fallback
+
+    def _find_next_step(self, collected_data: Dict[str, Any], current_step: str) -> Optional[Tuple[str, str, str, Optional[str]]]:
+        """
+        找到下一步应该问什么：
+        - 从 current_step 往后走
+        - 对于有 field_path 的步骤：如果该字段已存在且非空，则跳过
+        - 对于 field_path=None 的步骤（叙事类）：默认仍会问一次（除非你想按标记跳过）
+        """
+        step_ids = [s for s, _, _, _ in self.FLOW]
+        try:
+            start_idx = step_ids.index(current_step)
+        except ValueError:
+            start_idx = -1
+
+        for i in range(start_idx + 1, len(self.FLOW)):
+            step, topic, fallback, field_path = self.FLOW[i]
+            if field_path:
+                v = self._get_by_path(collected_data, field_path)
+                if v is not None and str(v).strip() != "":
+                    continue
+            return self.FLOW[i]
+        return None
+
+    # --------------------------
+    # Public APIs (called by routers)
+    # --------------------------
+    async def start_session(self, user_profile: Any) -> str:
+        """
+        /user/input 会调用这里，创建一个 session_id，并初始化 state。
+        user_profile 通常是 pydantic model（UserInput），这里兼容 model_dump()/dict()
+        """
+        session_id = str(uuid.uuid4())
+
+        if hasattr(user_profile, "model_dump"):
+            profile_dict = user_profile.model_dump()
+        elif hasattr(user_profile, "dict"):
+            profile_dict = user_profile.dict()
+        elif isinstance(user_profile, dict):
+            profile_dict = user_profile
+        else:
+            profile_dict = {"raw": str(user_profile)}
+
+        # 初始化 collected_data：把用户基础信息也作为线索的一部分
+        collected = {"user_profile": profile_dict}
+
+        # 第一问：来自 FLOW[0]
+        first_step, first_topic, first_fallback, _ = self.FLOW[0]
+        asked_questions: list[str] = []
+
+        # 用 AI 生成候选（温暖叙事）
+        try:
+            candidates = await self._generate_candidate_questions(
+                topic=first_topic,
+                collected_data=collected,
+                n=4,
+                avoid=[],
+            )
+            first_q = self._pick_best_question(candidates, first_fallback, asked_questions)
+        except Exception:
+            first_q = first_fallback
+
+        asked_questions.append(first_q)
+
+        state = {
+            "session_id": session_id,
+            "step": first_step,
+            "current_question": first_q,
+            "asked_questions": asked_questions,
+            "collected_data": collected,
+            "question_count": 0,
+        }
+
+        # 保存状态到Redis（必需）
+        try:
+            await self._save_state(session_id, state)
+        except Exception as e:
+            error_msg = f"无法连接到Redis服务器，请检查Redis服务是否运行。错误详情: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # 可选：Mongo 持久化 session 记录（失败也不影响）
+        try:
+            db = await self._get_mongo_db()
+            # 统一存储格式：family_graph.collected_data
+            await db.sessions.update_one(
+                {"_id": session_id},
+                {"$set": {"user_profile": profile_dict, "family_graph": {"collected_data": collected}}},
+                upsert=True,
+            )
+        except Exception as e:
+            logger.warning(f"Mongo 写入 session 失败（不影响主流程）：{e}")
+
+        logger.info(f"Session started: {session_id}")
+        return session_id
+    
+    async def get_initial_question(self, session_id: str) -> str:
+        """
+        获取当前问题
+        用于获取初始问题或重新获取问题
+        """
+        state = await self._load_state(session_id)
+        current_q = state.get("current_question")
+        if current_q:
+            return current_q
+        
+        # 如果没有当前问题，从第一步开始
+        step = state.get("step") or self.FLOW[0][0]
+        step_ids = [s for s, _, _, _ in self.FLOW]
+        try:
+            step_idx = step_ids.index(step)
+            _, _, fallback, _ = self.FLOW[step_idx]
+            return fallback
+        except ValueError:
+            _, _, fallback, _ = self.FLOW[0]
+            return fallback
+    
+    async def process_answer(self, session_id: str, answer: str) -> Dict[str, Any]:
+        """
+        处理用户回答，生成下一个问题
+        如果数据收集完成或达到最大轮数，返回完成状态
+        """
+        state = await self._load_state(session_id)
+
+        step = state.get("step") or self.FLOW[0][0]
+        current_q = state.get("current_question") or await self.get_initial_question(session_id)
+
+        collected = state.get("collected_data") or {}
+        asked = state.get("asked_questions") or []
+        count = int(state.get("question_count") or 0)
+        min_rounds = settings.min_questions
+        
+        # 检查用户是否想要主动结束对话
+        if self._is_end_request(answer):
+            # 如果至少完成了最少轮数，允许结束
+            if count >= min_rounds:
+                state["collected_data"] = collected
+                state["question_count"] = count + 1
+                state["current_question"] = None
+                state["step"] = "complete"
+                await self._save_state(session_id, state)
+                await self._persist_mongo(session_id, collected)
+                return {
+                    "status": "complete",
+                    "question": None,
+                    "step": "complete",
+                    "message": "感谢您的分享，对话已结束。您可以生成报告了。"
+                }
+            else:
+                # 未达到最少轮数，提示用户
+                return {
+                    "status": "continue",
+                    "question": f"我们还需要再聊几轮才能更好地了解您的家族历史。您刚才说\"{answer}\"，能再详细说说吗？",
+                    "step": step,
+                    "message": f"还需要至少 {min_rounds - count} 轮对话"
+                }
+
+        # 1) “不知道/没有” 不是错误：记录并继续推进
+        if self._is_skip(answer):
+            collected.setdefault("_unknown", {})
+            collected["_unknown"][step] = (answer or "").strip() or "unknown"
+
+            # 推进到下一步（按 FLOW 的逻辑）
+            nxt = self._find_next_step(collected, step)
+            if not nxt:
+                state["collected_data"] = collected
+                state["question_count"] = count + 1
+                state["current_question"] = None
+                state["step"] = "complete"
+                await self._save_state(session_id, state)
+                return {"status": "complete", "question": None, "step": "complete"}
+
+            next_step, next_topic, next_fallback, _ = nxt
+            candidates = await self._generate_candidate_questions(next_topic, collected, n=4, avoid=asked)
+            next_q = self._pick_best_question(candidates, next_fallback, asked)
+
+            state["collected_data"] = collected
+            state["question_count"] = count + 1
+            state["step"] = next_step
+            state["current_question"] = next_q
+            state["asked_questions"] = (asked + [next_q])[-30:]
+            await self._save_state(session_id, state)
+
+            return {"status": "continue", "question": next_q, "step": next_step}
+
+        # 2) 尝试抽取结构化信息（AI Extractor）
+        extracted = await self._extract_family_info(
+            answer=answer,
+            current_question=current_q,
+            existing_data=collected,
+        )
+
+        if extracted and isinstance(extracted, dict) and extracted != {}:
+            collected = self._deep_merge(collected, extracted)
+        else:
+            # 3) 抽取失败：不要“纠错”，改成“换角度陪聊式追问”
+            collected.setdefault("_unparsed", [])
+            collected["_unparsed"].append({"step": step, "q": current_q, "a": answer})
+
+            soft_q = await self._generate_soft_clarify(
+                current_question=current_q,
+                user_answer=answer,
+                topic_hint="围绕上一问的家族线索（允许模糊、不确定也可以）",
+            )
+
+            # 避免重复
+            if soft_q in asked:
+                candidates = await self._generate_candidate_questions(
+                    topic="围绕上一问的主题，换一种更容易回答的问法（更温和、更叙事）",
+                    collected_data=collected,
+                    n=4,
+                    avoid=asked,
+                )
+                soft_q = candidates[0] if candidates else (soft_q + "（大概方向也可以）")
+
+            state["collected_data"] = collected
+            state["question_count"] = count + 1
+            state["step"] = step  # 仍停留在当前 step，等待用户给到可用线索
+            state["current_question"] = soft_q
+            state["asked_questions"] = (asked + [soft_q])[-30:]
+            await self._save_state(session_id, state)
+
+            # Mongo 持久化（失败也不影响）
+            await self._persist_mongo(session_id, collected)
+
+            return {"status": "continue", "question": soft_q, "step": "clarify"}
+
+        # 4) 抽取成功：推进到下一步（按 FLOW 逻辑）
+        nxt = self._find_next_step(collected, step)
+        if not nxt:
+            state["collected_data"] = collected
+            state["question_count"] = count + 1
+            state["current_question"] = None
+            state["step"] = "complete"
+            await self._save_state(session_id, state)
+            await self._persist_mongo(session_id, collected)
+            return {"status": "complete", "question": None, "step": "complete"}
+
+        next_step, next_topic, next_fallback, _ = nxt
+        candidates = await self._generate_candidate_questions(next_topic, collected, n=4, avoid=asked)
+        next_q = self._pick_best_question(candidates, next_fallback, asked)
+
+        state["collected_data"] = collected
+        state["question_count"] = count + 1
+        state["step"] = next_step
+        state["current_question"] = next_q
+        state["asked_questions"] = (asked + [next_q])[-30:]
+        await self._save_state(session_id, state)
+        await self._persist_mongo(session_id, collected)
+
+        return {"status": "continue", "question": next_q, "step": next_step}
+
+    # --------------------------
+    # Mongo persist (optional)
+    # --------------------------
+    async def _persist_mongo(self, session_id: str, collected: Dict[str, Any]) -> None:
+        try:
+            db = await self._get_mongo_db()
+            # 统一存储格式：family_graph.collected_data
+            update_result = await db.sessions.update_one(
+                {"_id": session_id},
+                {"$set": {"family_graph": {"collected_data": collected}}},
+                upsert=True,
+            )
+            # 记录保存结果（用于调试）
+            if update_result.modified_count > 0 or update_result.upserted_id:
+                logger.debug(f"Mongo 持久化成功 - session_id: {session_id}, modified: {update_result.modified_count}, upserted: {bool(update_result.upserted_id)}")
+                logger.debug(f"保存的数据 keys: {list(collected.keys())}")
+            else:
+                logger.warning(f"Mongo 持久化未更新任何文档 - session_id: {session_id}")
+        except Exception as e:
+            logger.warning(f"Mongo 持久化失败（不影响主流程）：{e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+
+    # --------------------------
+    # AI: candidate questions (Option A)
+    # --------------------------
+    async def _generate_candidate_questions(
+        self,
+        topic: str,
+        collected_data: Dict[str, Any],
+        n: int = 4,
+        avoid: Optional[list[str]] = None,
+    ) -> list[str]:
+        self._ensure_llm()
+        avoid = avoid or []
+
+        prompt = f"""
+{self._narrative_style_block()}
+
+基于已收集的家族数据，生成{n}个候选问题来丰富家族信息。
+
+**重要：所有问题必须围绕寻根、寻祖际、寻家族这三个核心主题**
+
+主题：{topic}
+
+已收集数据：{json.dumps(collected_data, ensure_ascii=False)}
+
+已问过的问题（避免重复）：
+{json.dumps(avoid, ensure_ascii=False)}
+
+要求：
+1. 避免重复已问过的问题
+2. 围绕主题"{topic}"，逐步深入询问家族信息
+3. **所有问题必须围绕寻根、寻祖际、寻家族这三个核心主题**
+4. 问题要自然、友好、温暖，像在陪伴用户寻根
+5. 鼓励用户分享任何与寻根、寻祖际、寻家族相关的线索
+6. 返回JSON数组格式，例如：["问题1", "问题2", "问题3", "问题4"]
+7. 只返回JSON数组，不要其他文字
+"""
+        try:
+            response = await self._llm_client.chat.completions.create(
+                model=self._llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.8 if self._tone() == "warm" else 0.5,
+            )
+            content = (response.choices[0].message.content or "").strip()
+            if content.startswith("```"):
+                content = content.strip("`")
+                content = content.replace("json", "", 1).strip()
+
+            data = json.loads(content)
+            if isinstance(data, list):
+                out: list[str] = []
+                for q in data:
+                    if isinstance(q, str):
+                        q = q.strip()
+                        if q and q not in out:
+                            out.append(q)
+                return out[:n]
+        except AuthenticationError as e:
+            current_key = APIKeyManager.get_deepseek_key()
+            key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+            logger.error(f"生成候选问题失败 - 认证错误: API密钥无效")
+            logger.error(f"  使用的密钥: {key_preview}")
+            logger.error(f"  错误详情: {e}")
+            logger.error(f"  请检查: 1) API密钥是否正确 2) 密钥是否已过期 3) 密钥是否有足够余额")
+        except APIError as e:
+            logger.warning(f"生成候选问题失败 - API错误: {e}")
+        except Exception as e:
+            logger.warning(f"生成候选问题失败：{e}")
+
+        return []
+
+    async def _generate_soft_clarify(self, current_question: str, user_answer: str, topic_hint: str = "") -> str:
+        self._ensure_llm()
+        prompt = f"""
+{self._narrative_style_block()}
+
+用户刚才的回答可能没有提供到我们需要的线索，但不要责备用户。
+请用“换个角度聊聊”的方式，给出一个更温柔、更容易回答的追问。
+
+我们想了解的方向：
+{topic_hint or "围绕上一问的主题"}
+
+上一问：
+{current_question}
+
+用户回答：
+{user_answer}
+
+请返回一个更温柔、更容易回答的追问问题。
+只返回问题文本，不要其他文字。
+"""
+        try:
+            response = await self._llm_client.chat.completions.create(
+                model=self._llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.8 if self._tone() == "warm" else 0.6,
+            )
+            q = (response.choices[0].message.content or "").strip()
+            return q or "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
+        except AuthenticationError as e:
+            current_key = APIKeyManager.get_deepseek_key()
+            key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+            logger.error(f"soft clarify 生成失败 - 认证错误: API密钥无效")
+            logger.error(f"  使用的密钥: {key_preview}")
+            logger.error(f"  错误详情: {e}")
+            logger.error(f"  请检查: 1) API密钥是否正确 2) 密钥是否已过期 3) 密钥是否有足够余额")
+            return "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
+        except APIError as e:
+            logger.warning(f"soft clarify 生成失败 - API错误: {e}")
+            return "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
+        except Exception as e:
+            logger.warning(f"soft clarify 生成失败：{e}")
+            return "没关系，我们换个角度想想：你对这件事有没有任何模糊的印象（比如省份或城市）？"
+
+    # --------------------------
+    # AI: extract structured info
+    # --------------------------
+    async def _extract_family_info(self, answer: str, current_question: str, existing_data: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_llm()
+
+        prompt = f"""
+你是“家族信息抽取器”。请结合【当前问题】与【用户回答】抽取结构化信息并输出 JSON。
+
+【当前问题】：
+{current_question}
+
+【用户回答】：
+{answer}
+
+【已有数据】：
+{json.dumps(existing_data, ensure_ascii=False)}
+
+抽取规则：
+- 只输出 JSON，不要 markdown，不要解释
+- 如果是爸爸籍贯 -> father.origin
+- 如果是爷爷籍贯 -> grandfather.origin
+- 如果是我自己的籍贯/祖籍 -> self.origin
+- 辈分字 -> self.generation_name
+- 姓氏 -> self.surname
+- 如果无法判断或没有新信息 -> 输出空 JSON：{{}}
+
+示例：
+{{"father": {{"origin": "山东枣庄"}}}}
+"""
+        try:
+            resp = await self._llm_client.chat.completions.create(
+                model=self._llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+            )
+            content = (resp.choices[0].message.content or "").strip()
+
+            if content.startswith("```"):
+                content = content.strip("`")
+                content = content.replace("json", "", 1).strip()
+
+            data = json.loads(content)
+            if not isinstance(data, dict):
+                return {}
+            return data
+        except AuthenticationError as e:
+            current_key = APIKeyManager.get_deepseek_key()
+            key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+            logger.error(f"抽取失败 - 认证错误: API密钥无效")
+            logger.error(f"  使用的密钥: {key_preview}")
+            logger.error(f"  错误详情: {e}")
+            logger.error(f"  请检查: 1) API密钥是否正确 2) 密钥是否已过期 3) 密钥是否有足够余额")
+            return {}
+        except APIError as e:
+            logger.error(f"抽取失败 - API错误: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"抽取失败：{e}")
+            return {}
+
+    # --------------------------
+    # AI: Summarize memories from conversation
+    # --------------------------
+    async def summarize_memories(self, session_id: str) -> List[Dict[str, str]]:
+        """
+        总结对话历史，生成记忆卡片
+        返回格式: [{"title": "记忆标题", "content": "详细内容"}, ...]
+        """
+        try:
+            state = await self._load_state(session_id)
+            collected = state.get("collected_data", {})
+            asked_questions = state.get("asked_questions", [])
+            unparsed = collected.get("_unparsed", [])
+            
+            # 构建对话历史文本
+            conversation_text = ""
+            if unparsed:
+                conversation_text = "对话历史：\n"
+                for item in unparsed:
+                    q = item.get("q", "")
+                    a = item.get("a", "")
+                    if q and a:
+                        conversation_text += f"问：{q}\n答：{a}\n\n"
+            
+            # 如果没有对话历史，从collected_data中提取信息
+            if not conversation_text:
+                # 尝试从collected_data中提取文本信息
+                user_profile = collected.get("user_profile", {})
+                if user_profile:
+                    conversation_text = f"用户信息：{json.dumps(user_profile, ensure_ascii=False)}\n"
+                
+                # 提取其他收集到的信息
+                for key, value in collected.items():
+                    if key not in ["_unknown", "_unparsed", "user_profile"] and value:
+                        conversation_text += f"{key}: {json.dumps(value, ensure_ascii=False)}\n"
+            
+            if not conversation_text.strip():
+                logger.warning(f"Session {session_id} has no conversation history to summarize")
+                return []
+            
+            # 调用AI总结记忆（使用gateway_service，与step3保持一致）
+            prompt = f"""
+你是一位温暖的家族记忆整理者。请从以下对话历史中，提取出3-8个温暖、有情感、有画面感的记忆片段。
+
+对话历史：
+{conversation_text}
+
+要求：
+1. 每个记忆片段应该是一个独立的、完整的场景或故事
+2. 标题要简洁、有诗意、能唤起情感（如"奶奶的童谣"、"爷爷的锄头"、"老槐树下的午后"等）
+3. 内容要详细、有画面感、有温度，像在讲述一个真实的故事
+4. 内容应该包含具体的场景、人物、情感和细节
+5. 如果对话中提到的是模糊信息，可以适当发挥，但要基于对话内容
+6. 返回JSON数组格式，每个元素包含title和content字段
+
+示例格式：
+[
+  {{
+    "title": "奶奶的童谣",
+    "content": "夏天的午后，老槐树下总是一片浓荫。奶奶坐在竹椅上，我趴在她膝头，听她用方言轻轻哼："月亮粑粑，肚里坐个爹爹……"蒲扇摇得慢，风里有皂角的味道。她的声音像晒暖的棉花，软软的，每一个字都带着旧日的光晕。"
+  }},
+  {{
+    "title": "爷爷的锄头",
+    "content": "爷爷的锄头总是擦得锃亮，手柄被岁月磨得光滑。每天清晨，他扛着锄头走向田间，背影在晨光中拉得很长。那把锄头见证了他一生的劳作，也见证了我们家族的根。"
+  }}
+]
+
+只返回JSON数组，不要其他文字。
+"""
+            try:
+                # 使用gateway_service调用DeepSeek模型（与step3报告生成保持一致）
+                content = await self.gateway_service.llm_chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.8,
+                    timeout=240.0  # 4分钟超时
+                )
+                content = content.strip()
+                
+                # 清理JSON格式
+                if content.startswith("```"):
+                    content = content.strip("`")
+                    content = content.replace("json", "", 1).strip()
+                
+                # 解析JSON
+                memories = json.loads(content)
+                if not isinstance(memories, list):
+                    logger.warning(f"AI返回的不是数组格式: {type(memories)}")
+                    return []
+                
+                # 验证和清理数据
+                result = []
+                for mem in memories:
+                    if isinstance(mem, dict) and "title" in mem and "content" in mem:
+                        result.append({
+                            "title": str(mem["title"]).strip(),
+                            "content": str(mem["content"]).strip()
+                        })
+                
+                logger.info(f"成功生成 {len(result)} 个记忆卡片 for session {session_id}")
+                return result
+                
+            except ValueError as e:
+                # gateway_service可能抛出ValueError（如API密钥未配置）
+                current_key = APIKeyManager.get_deepseek_key()
+                key_preview = self._mask_api_key(current_key) if current_key else "未配置"
+                logger.error(f"总结记忆失败 - 配置错误: {e}")
+                logger.error(f"  使用的密钥: {key_preview}")
+                return []
+            except TimeoutError as e:
+                logger.error(f"总结记忆失败 - 超时错误: {e}")
+                return []
+            except json.JSONDecodeError as e:
+                logger.error(f"总结记忆失败 - JSON解析错误: {e}")
+                logger.error(f"AI返回内容: {content[:200] if 'content' in locals() else 'N/A'}")
+                return []
+            except Exception as e:
+                logger.error(f"总结记忆失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return []
+                
+        except ValueError as e:
+            logger.error(f"Session {session_id} not found: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"总结记忆时发生错误: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []

@@ -3,18 +3,23 @@
 """
 from fastapi import APIRouter, HTTPException
 from app.models.user import UserInput, UserResponse
+from app.services.ai_service import AIService
+from app.utils.logger import logger
 
-router = APIRouter(prefix="/api/users", tags=["users"])
+router = APIRouter(prefix="/user", tags=["user"])
 
-@router.post("/", response_model=UserResponse)
-async def create_user(user_input: UserInput):
-    """创建用户"""
-    # TODO: 实现用户创建逻辑
-    raise HTTPException(status_code=501, detail="Not implemented")
+ai_service = AIService()
 
-@router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: int):
-    """获取用户信息"""
-    # TODO: 实现用户查询逻辑
-    raise HTTPException(status_code=501, detail="Not implemented")
 
+@router.post("/input", response_model=UserResponse)
+async def submit_input(user_input: UserInput):
+    """
+    用户输入基本信息，启动会话
+    返回 session_id
+    """
+    try:
+        session_id = await ai_service.start_session(user_input)
+        return UserResponse(session_id=session_id, message="会话已创建")
+    except Exception as e:
+        logger.error(f"Error creating session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

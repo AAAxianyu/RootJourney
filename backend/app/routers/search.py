@@ -2,28 +2,30 @@
 搜索路由
 """
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import List, Optional
+from typing import Optional
+from app.services.search_service import SearchService
+from app.services.graph_service import GraphService
+from app.utils.logger import logger
 
-router = APIRouter(prefix="/api/search", tags=["search"])
+router = APIRouter(prefix="/search", tags=["search"])
 
-class SearchRequest(BaseModel):
-    query: str
-    filters: Optional[dict] = None
+search_service = SearchService()
+graph_service = GraphService()
 
-class SearchResult(BaseModel):
-    title: str
-    url: str
-    snippet: str
-    source: str
 
-class SearchResponse(BaseModel):
-    results: List[SearchResult]
-    total: int
-
-@router.post("/", response_model=SearchResponse)
-async def search(request: SearchRequest):
-    """联网搜索接口"""
-    # TODO: 实现搜索逻辑
-    raise HTTPException(status_code=501, detail="Not implemented")
-
+@router.get("/family")
+async def search_family(session_id: str):
+    """
+    搜索家族历史
+    基于 session_id 中的家族图谱进行联网搜索
+    """
+    try:
+        results = await search_service.perform_search(session_id)
+        # 更新图谱
+        await graph_service.update_graph(session_id, results)
+        return {"results": results}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error performing search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

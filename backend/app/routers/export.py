@@ -1,26 +1,30 @@
 """
 导出路由
 """
-from fastapi import APIRouter, HTTPException, Response
-from typing import Optional
+from fastapi import APIRouter, HTTPException
+from app.services.output_service import OutputService
+# 视频生成功能已移除
+from app.utils.logger import logger
 
-router = APIRouter(prefix="/api/export", tags=["export"])
+router = APIRouter(prefix="/export", tags=["export"])
 
-@router.get("/pdf/{report_id}")
-async def export_pdf(report_id: str):
-    """导出 PDF 报告"""
-    # TODO: 实现 PDF 导出逻辑
-    raise HTTPException(status_code=501, detail="Not implemented")
+output_service = OutputService()
 
-@router.get("/json/{report_id}")
-async def export_json(report_id: str):
-    """导出 JSON 数据"""
-    # TODO: 实现 JSON 导出逻辑
-    raise HTTPException(status_code=501, detail="Not implemented")
 
-@router.get("/image/{family_tree_id}")
-async def export_family_tree_image(family_tree_id: str):
-    """导出家族图谱图片"""
-    # TODO: 实现图片导出逻辑
-    raise HTTPException(status_code=501, detail="Not implemented")
-
+@router.get("/{type}")
+async def export_output(session_id: str, type: str):
+    """
+    导出输出
+    支持 pdf 和 video 两种类型
+    """
+    try:
+        if type == "pdf":
+            pdf_url = await output_service.export_pdf(session_id)
+            return {"url": pdf_url, "type": "pdf"}
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported export type: {type}. Only 'pdf' is supported.")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error exporting {type}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

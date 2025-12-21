@@ -44,6 +44,11 @@ const ChatInterface = ({ context }) => {
   return (
     <div className="chat-interface">
       <div className="chat-messages">
+        {messages.length === 0 && (
+          <div className="message assistant">
+            <div className="message-content">您好！我是您的家族历史助手，有什么想了解的吗？</div>
+          </div>
+        )}
         {messages.map((msg, idx) => (
           <div key={idx} className={`message ${msg.role}`}>
             <div className="message-content">{msg.content}</div>
@@ -64,6 +69,7 @@ const ChatInterface = ({ context }) => {
           onChange={(e) => setInput(e.target.value)}
           placeholder="输入您的问题..."
           disabled={loading}
+          autoComplete="off"
         />
         <button type="submit" disabled={loading || !input.trim()}>
           发送
